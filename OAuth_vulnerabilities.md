@@ -11,6 +11,17 @@
 *   **CWE Mapping**: CWE-601 (Open Redirect), CWE-20 (Improper Input Validation)
 *   **OWASP Top 10 Reference**: A01:2021-Broken Access Control
 
+---
+
+## 🌐 What is OAuth 2.0?
+
+**OAuth 2.0 (Open Authorization)** is an industry-standard delegation framework that allows a third-party website or client application to access restricted user resources on another service (the Identity Provider or IdP) without exposing the user's actual login credentials or password. 
+
+Instead of credentials, OAuth relies on a system of short-lived **access tokens** issued via cryptographic handshakes. The protocol is inherently complex and loosely defined, leaving significant room for implementation logic flaws and misconfigurations on both the client application side and the central authentication service layer.
+
+---
+
+
 #### Low-Level Architectural Mechanics
 The vulnerability relies on a weak string-matching logic on the Authorization Server. Instead of validating the exact `redirect_uri` string, the server only checks if the incoming path **starts with** an allowed prefix. 
 
