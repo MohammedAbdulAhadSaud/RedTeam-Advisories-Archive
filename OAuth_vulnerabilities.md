@@ -1,6 +1,6 @@
 # 📑 Deep-Dive Architectural Study: OAuth 2.0 Architectural & Implementation Flaws
 
-**Module Group**: 02 — Client-Side Application Logic and Service Configurations  
+**Category**: Client-Side Application Logic and Service Configurations  
 **Severity Focus**: High to Critical (Potential for Full Account Takeover & Token Theft)
 
 ---
