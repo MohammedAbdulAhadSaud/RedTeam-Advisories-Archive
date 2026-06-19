@@ -1,6 +1,6 @@
 # 📑 Deep-Dive Architectural Study: OS Command Injection
 
-**Module**: 01 — Advanced Input Validation & OS Interactivity  
+**Category**: Advanced Input Validation & OS Interactivity  
 **Severity**: Critical (Potential for Complete Host Compromise)
 ---
 
