@@ -14,6 +14,14 @@ To ensure precise classification during reporting and threat modeling, map this 
 
 ---
 
+## What is OS Command Injection?
+
+**OS Command Injection (CWE-78)** is a critical vulnerability that occurs when a web application takes untrusted user input and passes it directly to an operating system shell interpreter (such as `/bin/sh` on Unix or `cmd.exe` on Windows) without proper sanitization. 
+
+Instead of treating the input strictly as static text data, the shell execution environment interprets specific control characters as executable system logic. This breaks the security isolation boundary between the web user space and the host operating system kernel, allowing an unauthenticated attacker to execute arbitrary system commands, manipulate the file system, and achieve complete infrastructure compromise.
+
+---
+
 ## 🔬 1. Low-Level Architectural Mechanics
 
 To understand command injection completely, you must look at how an Operating System manages processes. 
