@@ -1,5 +1,34 @@
 ## 📚 Knowledge Base
 
+| 🌐 Web Security                               | 🔐 Authentication & Authorization                                                | 🌍 HTTP Attacks                                                              |
+| :-------------------------------------------- | :------------------------------------------------------------------------------- | :--------------------------------------------------------------------------- |
+| [SQL Injection](./Web/SQL%20Injection.md)     | [Authentication](./Authentication-Authorization/Authentication.md)               | [HTTP Request Smuggling](./HTTP-Attacks/HTTP%20Request%20Smuggling.md)       |
+| [NoSQL Injection](./Web/NoSQL%20Injection.md) | [OAuth Authentication](./Authentication-Authorization/OAuth%20Authentication.md) | [HTTP Host Header Attacks](./HTTP-Attacks/HTTP%20Host%20Header%20Attacks.md) |
+| [Cross-Site Scripting](./Web/XSS.md)          | [JWT Attacks](./Authentication-Authorization/JWT%20Attacks.md)                   | [Web Cache Poisoning](./HTTP-Attacks/Web%20Cache%20Poisoning.md)             |
+| [Cross-Site Request Forgery](./Web/CSRF.md)   | [Access Control](./Authentication-Authorization/Access%20Control.md)             | [Web Cache Deception](./HTTP-Attacks/Web%20Cache%20Deception.md)             |
+
+| 🔌 API Security                                                          | ⚙️ Application Logic                                                                        | 🤖 AI Security                                 |
+| :----------------------------------------------------------------------- | :------------------------------------------------------------------------------------------ | :--------------------------------------------- |
+| [API Testing](./APIs/API%20Testing.md)                                   | [Business Logic Vulnerabilities](./Application-Logic/Business%20Logic%20Vulnerabilities.md) | [Web LLM Attacks](./AI/Web%20LLM%20Attacks.md) |
+| [GraphQL API Vulnerabilities](./APIs/GraphQL%20API%20Vulnerabilities.md) | [Race Conditions](./Application-Logic/Race%20Conditions.md)                                 |                                                |
+|                                                                          | [Information Disclosure](./Application-Logic/Information%20Disclosure.md)                   |                                                |
+
+| 🌐 Additional Web Security                                              | 📚 Fundamentals                                          |
+| :---------------------------------------------------------------------- | :------------------------------------------------------- |
+| [Server-Side Request Forgery](./Web/SSRF.md)                            | [Essential Skills](./Fundamentals/Essential%20Skills.md) |
+| [XML External Entity](./Web/XXE.md)                                     |                                                          |
+| [Server-Side Template Injection](./Web/SSTI.md)                         |                                                          |
+| [Path Traversal](./Web/Path%20Traversal.md)                             |                                                          |
+| [Command Injection](./Web/Command%20Injection.md)                       |                                                          |
+| [File Upload Vulnerabilities](./Web/File%20Upload%20Vulnerabilities.md) |                                                          |
+| [Insecure Deserialization](./Web/Insecure%20Deserialization.md)         |                                                          |
+| [Prototype Pollution](./Web/Prototype%20Pollution.md)                   |                                                          |
+| [DOM-Based Vulnerabilities](./Web/DOM-Based%20Vulnerabilities.md)       |                                                          |
+| [Clickjacking](./Web/Clickjacking.md)                                   |                                                          |
+| [Cross-Origin Resource Sharing](./Web/CORS.md)                          |                                                          |
+| [WebSockets](./Web/WebSockets.md)                                       |                                                          |
+## 📚 Knowledge Base
+
 | Category                              | Topics                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 🌐 **Web Security**                   | [SQL Injection](./Web/SQL%20Injection.md) · [NoSQL Injection](./Web/NoSQL%20Injection.md) · [XSS](./Web/XSS.md) · [CSRF](./Web/CSRF.md) · [SSRF](./Web/SSRF.md) · [XXE](./Web/XXE.md) · [SSTI](./Web/SSTI.md) · [Path Traversal](./Web/Path%20Traversal.md) · [Command Injection](./Web/Command%20Injection.md) · [File Upload Vulnerabilities](./Web/File%20Upload%20Vulnerabilities.md) · [Insecure Deserialization](./Web/Insecure%20Deserialization.md) · [Prototype Pollution](./Web/Prototype%20Pollution.md) · [DOM-Based Vulnerabilities](./Web/DOM-Based%20Vulnerabilities.md) · [Clickjacking](./Web/Clickjacking.md) · [CORS](./Web/CORS.md) · [WebSockets](./Web/WebSockets.md) |
