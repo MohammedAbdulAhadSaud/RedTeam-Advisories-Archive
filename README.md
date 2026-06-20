@@ -1,87 +1,20 @@
-# Offensive-Archives
+## 📚 Knowledge Base Structure
 
-This repository contains my personal notes, payload listings, and technical study logs for various web application and API vulnerabilities. It documents the core mechanics of how these security flaws operate under the hood and how they are manually exploited during security assessments.
-
-# 📑  Application Security & Threat Modeling Matrix
-
-## 🧭 Repository Navigation Index
-
-| Input Interactivity & Injection | Logic, Auth & Access Control | Advanced Protocols & Architecture |
-| :--- | :--- | :--- |
-| 🔹 [SQL Injection](./sqli.md) | 🔹 [Authentication](./auth.md) | 🔹 [OAuth Authentication](./oauth.md) |
-| 🔹 [Command Injection](./cmd-injection.md) | 🔹 [Access Control](./access-control.md) | 🔹 [JWT Attacks](./jwt.md) |
-| 🔹 [Path Traversal](./path-traversal.md) | 🔹 [Business Logic Flaws](./logic.md) | 🔹 [Request Smuggling](./smuggling.md) |
-| 🔹 [XXE Injection](./xxe.md) | 🔹 [File Uploads](./uploads.md) | 🔹 [Web LLM Attacks](./llm.md) |
-| 🔹 [NoSQL Injection](./nosql.md) | 🔹 [Race Conditions](./race.md) | 🔹 [Prototype Pollution](./prototype.md) |
-
-# Red Team Archive
-
-A curated collection of offensive security notes, attack methodologies, vulnerability research, and PortSwigger Academy study material.
-
-## Repository Structure
-
-```text
-Red-Team-Archive/
-│
-├── Web/
-│   ├── SQL Injection.md
-│   ├── NoSQL Injection.md
-│   ├── XSS.md
-│   ├── CSRF.md
-│   ├── SSRF.md
-│   ├── XXE.md
-│   ├── SSTI.md
-│   ├── Path Traversal.md
-│   ├── Command Injection.md
-│   ├── File Upload Vulnerabilities.md
-│   ├── Insecure Deserialization.md
-│   ├── Prototype Pollution.md
-│   ├── DOM-Based Vulnerabilities.md
-│   ├── Clickjacking.md
-│   ├── CORS.md
-│   └── WebSockets.md
-│
-├── Authentication-Authorization/
-│   ├── Authentication.md
-│   ├── OAuth Authentication.md
-│   ├── JWT Attacks.md
-│   └── Access Control.md
-│
-├── HTTP-Attacks/
-│   ├── HTTP Request Smuggling.md
-│   ├── HTTP Host Header Attacks.md
-│   ├── Web Cache Poisoning.md
-│   └── Web Cache Deception.md
-│
-├── APIs/
-│   ├── API Testing.md
-│   └── GraphQL API Vulnerabilities.md
-│
-├── Logic/
-│   ├── Business Logic Vulnerabilities.md
-│   ├── Race Conditions.md
-│   └── Information Disclosure.md
-│
-├── AI/
-│   └── Web LLM Attacks.md
-│
-└── Fundamentals/
-    └── Essential Skills.md
-```
-
-## Purpose
-
-This repository serves as a personal red team knowledge base containing:
-
-* Vulnerability research notes
-* Exploitation techniques
-* Detection methodologies
-* Bypass techniques
-* Secure coding references
-* PortSwigger Academy notes
-* Real-world attack scenarios
-
-Each topic is maintained as an individual document to improve organization, navigation, and long-term maintainability.
-
-```
-```
+| 🌐 Web Security                                                            | 🔐 Authentication & Authorization                                                   | 🌍 HTTP Attacks                                                                 | 🔌 API Security                                                             | ⚙️ Application Logic                                                                           | 🤖 AI Security                                    | 📚 Fundamentals                                             |
+| :------------------------------------------------------------------------- | :---------------------------------------------------------------------------------- | :------------------------------------------------------------------------------ | :-------------------------------------------------------------------------- | :--------------------------------------------------------------------------------------------- | :------------------------------------------------ | :---------------------------------------------------------- |
+| 🔹 [SQL Injection](./Web/SQL%20Injection.md)                               | 🔹 [Authentication](./Authentication-Authorization/Authentication.md)               | 🔹 [HTTP Request Smuggling](./HTTP-Attacks/HTTP%20Request%20Smuggling.md)       | 🔹 [API Testing](./APIs/API%20Testing.md)                                   | 🔹 [Business Logic Vulnerabilities](./Application-Logic/Business%20Logic%20Vulnerabilities.md) | 🔹 [Web LLM Attacks](./AI/Web%20LLM%20Attacks.md) | 🔹 [Essential Skills](./Fundamentals/Essential%20Skills.md) |
+| 🔹 [NoSQL Injection](./Web/NoSQL%20Injection.md)                           | 🔹 [OAuth Authentication](./Authentication-Authorization/OAuth%20Authentication.md) | 🔹 [HTTP Host Header Attacks](./HTTP-Attacks/HTTP%20Host%20Header%20Attacks.md) | 🔹 [GraphQL API Vulnerabilities](./APIs/GraphQL%20API%20Vulnerabilities.md) | 🔹 [Race Conditions](./Application-Logic/Race%20Conditions.md)                                 |                                                   |                                                             |
+| 🔹 [Cross-Site Scripting (XSS)](./Web/XSS.md)                              | 🔹 [JWT Attacks](./Authentication-Authorization/JWT%20Attacks.md)                   | 🔹 [Web Cache Poisoning](./HTTP-Attacks/Web%20Cache%20Poisoning.md)             |                                                                             | 🔹 [Information Disclosure](./Application-Logic/Information%20Disclosure.md)                   |                                                   |                                                             |
+| 🔹 [Cross-Site Request Forgery (CSRF)](./Web/CSRF.md)                      | 🔹 [Access Control](./Authentication-Authorization/Access%20Control.md)             | 🔹 [Web Cache Deception](./HTTP-Attacks/Web%20Cache%20Deception.md)             |                                                                             |                                                                                                |                                                   |                                                             |
+| 🔹 [Server-Side Request Forgery (SSRF)](./Web/SSRF.md)                     |                                                                                     |                                                                                 |                                                                             |                                                                                                |                                                   |                                                             |
+| 🔹 [XML External Entity (XXE)](./Web/XXE.md)                               |                                                                                     |                                                                                 |                                                                             |                                                                                                |                                                   |                                                             |
+| 🔹 [Server-Side Template Injection (SSTI)](./Web/SSTI.md)                  |                                                                                     |                                                                                 |                                                                             |                                                                                                |                                                   |                                                             |
+| 🔹 [Path Traversal](./Web/Path%20Traversal.md)                             |                                                                                     |                                                                                 |                                                                             |                                                                                                |                                                   |                                                             |
+| 🔹 [Command Injection](./Web/Command%20Injection.md)                       |                                                                                     |                                                                                 |                                                                             |                                                                                                |                                                   |                                                             |
+| 🔹 [File Upload Vulnerabilities](./Web/File%20Upload%20Vulnerabilities.md) |                                                                                     |                                                                                 |                                                                             |                                                                                                |                                                   |                                                             |
+| 🔹 [Insecure Deserialization](./Web/Insecure%20Deserialization.md)         |                                                                                     |                                                                                 |                                                                             |                                                                                                |                                                   |                                                             |
+| 🔹 [Prototype Pollution](./Web/Prototype%20Pollution.md)                   |                                                                                     |                                                                                 |                                                                             |                                                                                                |                                                   |                                                             |
+| 🔹 [DOM-Based Vulnerabilities](./Web/DOM-Based%20Vulnerabilities.md)       |                                                                                     |                                                                                 |                                                                             |                                                                                                |                                                   |                                                             |
+| 🔹 [Clickjacking](./Web/Clickjacking.md)                                   |                                                                                     |                                                                                 |                                                                             |                                                                                                |                                                   |                                                             |
+| 🔹 [Cross-Origin Resource Sharing (CORS)](./Web/CORS.md)                   |                                                                                     |                                                                                 |                                                                             |                                                                                                |                                                   |                                                             |
+| 🔹 [WebSockets](./Web/WebSockets.md)                                       |                                                                                     |                                                                                 |                                                                             |                                                                                                |                                                   |                                                             |
