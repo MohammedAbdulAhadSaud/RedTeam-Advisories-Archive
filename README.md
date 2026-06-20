@@ -13,3 +13,50 @@ This repository contains my personal notes, payload listings, and technical stud
 | 🔹 [Path Traversal](./path-traversal.md) | 🔹 [Business Logic Flaws](./logic.md) | 🔹 [Request Smuggling](./smuggling.md) |
 | 🔹 [XXE Injection](./xxe.md) | 🔹 [File Uploads](./uploads.md) | 🔹 [Web LLM Attacks](./llm.md) |
 | 🔹 [NoSQL Injection](./nosql.md) | 🔹 [Race Conditions](./race.md) | 🔹 [Prototype Pollution](./prototype.md) |
+
+Red-Team-Archive/
+│
+├── Web/
+│   ├── SQL Injection.md
+│   ├── NoSQL Injection.md
+│   ├── XSS.md
+│   ├── CSRF.md
+│   ├── SSRF.md
+│   ├── XXE.md
+│   ├── SSTI.md
+│   ├── Path Traversal.md
+│   ├── Command Injection.md
+│   ├── File Upload Vulnerabilities.md
+│   ├── Insecure Deserialization.md
+│   ├── Prototype Pollution.md
+│   ├── DOM-Based Vulnerabilities.md
+│   ├── Clickjacking.md
+│   ├── CORS.md
+│   └── WebSockets.md
+│
+├── Authentication-Authorization/
+│   ├── Authentication.md
+│   ├── OAuth Authentication.md
+│   ├── JWT Attacks.md
+│   └── Access Control.md
+│
+├── HTTP-Attacks/
+│   ├── HTTP Request Smuggling.md
+│   ├── HTTP Host Header Attacks.md
+│   ├── Web Cache Poisoning.md
+│   └── Web Cache Deception.md
+│
+├── APIs/
+│   ├── API Testing.md
+│   └── GraphQL API Vulnerabilities.md
+│
+├── Logic/
+│   ├── Business Logic Vulnerabilities.md
+│   ├── Race Conditions.md
+│   └── Information Disclosure.md
+│
+├── AI/
+│   └── Web LLM Attacks.md
+│
+└── Fundamentals/
+└── Essential Skills.md
