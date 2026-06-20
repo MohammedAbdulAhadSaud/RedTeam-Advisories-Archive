@@ -14,7 +14,9 @@ To ensure precise classification during documentation, reporting, and threat mod
 * **CWE-22 (Primary)**: Improper Limitation of a Pathname to a Restricted Directory ('Path Traversal') — The foundational flaw where an application fails to properly sanitize user-controlled file paths.
 * **CWE-23 (Child)**: Relative Path Traversal — The use of directory traversal sequences (such as `../`) to access file locations outside the intended directory.
 * **CWE-36 (Child)**: Absolute Path Traversal — The direct provision of fully qualified file locations without using relative traversal tokens.
-* **OWASP Top 10 Reference**: A03:2021-Injection — Classified under the Injection category due to the insecure evaluation of untrusted user input within structural file systems.
+* **OWASP Top 10 Reference**
+* A03:2021-Injection — Classified under the Injection category due to the insecure evaluation of untrusted user input within structural file systems.
+* A05:2021 Security Misconfiguration (Context Dependent)
 
 ---
 
@@ -184,7 +186,7 @@ When simple injection payloads are blocked, the application may be enforcing str
 * **Payload**: `/var/www/images/../../../etc/passwd`
 * **Example Implementation**:
   ```http
-  https://vulnerable-target.com
+  https://vulnerable-target.com/var/www/images/../../../etc/passwd
   ```
 
 #### 🎯 2. Static Extension Enforcement (Null Byte Architecture)
@@ -193,7 +195,7 @@ When simple injection payloads are blocked, the application may be enforcing str
 * **Payload**: `../../../etc/passwd%00.png`
 * **Example Implementation**:
   ```http
-  https://vulnerable-target.com
+  https://vulnerable-target.com../../../etc/passwd%00.png
   ```
 
 ---
@@ -225,10 +227,6 @@ def service_file_request(user_supplied_filename):
         return f"System File Error: {error_context}"
 ```
 
-* **Example Implementation**:
-  ```http
-  https://vulnerable-target.com
-  ```
 
 ### Secure Implementation (Path Canonicalization & Prefix Anchor Verification)
 * **Explanation**: The standard industry remediation for path traversal involves resolving the user path to its true absolute form (canonicalization) and verifying that the final path matches the safe folder boundary. 
@@ -261,7 +259,3 @@ def secure_file_request(user_supplied_filename):
         return "Access Control Exception: Path Traversal Attempt Blocked!"
 ```
 
-* **Example Implementation**:
-  ```http
-  https://vulnerable-target.com
-  ```
