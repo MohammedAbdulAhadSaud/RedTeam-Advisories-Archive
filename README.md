@@ -14,6 +14,13 @@ This repository contains my personal notes, payload listings, and technical stud
 | 🔹 [XXE Injection](./xxe.md) | 🔹 [File Uploads](./uploads.md) | 🔹 [Web LLM Attacks](./llm.md) |
 | 🔹 [NoSQL Injection](./nosql.md) | 🔹 [Race Conditions](./race.md) | 🔹 [Prototype Pollution](./prototype.md) |
 
+# Red Team Archive
+
+A curated collection of offensive security notes, attack methodologies, vulnerability research, and PortSwigger Academy study material.
+
+## Repository Structure
+
+```text
 Red-Team-Archive/
 │
 ├── Web/
@@ -59,4 +66,22 @@ Red-Team-Archive/
 │   └── Web LLM Attacks.md
 │
 └── Fundamentals/
-└── Essential Skills.md
+    └── Essential Skills.md
+```
+
+## Purpose
+
+This repository serves as a personal red team knowledge base containing:
+
+* Vulnerability research notes
+* Exploitation techniques
+* Detection methodologies
+* Bypass techniques
+* Secure coding references
+* PortSwigger Academy notes
+* Real-world attack scenarios
+
+Each topic is maintained as an individual document to improve organization, navigation, and long-term maintainability.
+
+```
+```
