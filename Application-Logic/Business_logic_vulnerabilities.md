@@ -820,6 +820,592 @@ def update_profile_secure(request, user_session):
     
     db.update_user(user)
 ```
+### Type M: Coupon/Discount Stacking Abuse
+
+**Description**: Application doesn't prevent multiple discounts from being applied simultaneously when they should be mutually exclusive.
+
+| Aspect | Details |
+|--------|---------|
+| **Attack Vector** | Apply multiple coupon codes, combine seasonal + referral discounts |
+| **Impact** | Massive price reduction, financial loss, revenue theft |
+| **Detection** | Test coupon code combinations, check discount logic in JavaScript |
+
+#### 🎯 Example: Double Discount Stacking
+
+**Demo Scenario**: Store allows 30% newsletter coupon + 20% first-order discount
+
+**Payload**:
+```http
+POST /cart/coupon HTTP/1.1
+Host: shop.example.com
+
+code=SIGNUP30&code=FIRST20
+```
+
+**Alternative Payload**:
+```http
+POST /cart/checkout HTTP/1.1
+Host: shop.example.com
+
+{
+  "product_id": "laptop_999",
+  "quantity": 1,
+  "original_price": 999.00,
+  "discounts": ["SIGNUP30", "FIRST20", "LOYALTY10"]
+}
+```
+
+**Expected Output**: Only one discount applied (max 30%)  
+**Actual Output**: All discounts stacked (30% + 20% + 10% = 60%)  
+**Result**: Laptop priced at $399 instead of $999
+
+**Implementation**:
+```python
+# ❌ VULNERABLE
+def apply_discounts(price, discount_codes):
+    total_discount = 0
+    for code in discount_codes:
+        discount = db.get_discount(code)
+        total_discount += discount['percentage']
+    return price * (1 - total_discount / 100)
+
+# ✅ SECURE
+def apply_discounts_secure(price, discount_codes):
+    # Only allow highest single discount
+    max_discount = 0
+    for code in discount_codes:
+        discount = db.get_discount(code)
+        max_discount = max(max_discount, discount['percentage'])
+    
+    # Or enforce mutual exclusivity
+    allowed_categories = ['newsletter', 'first-order']
+    used_categories = set()
+    total_discount = 0
+    
+    for code in discount_codes:
+        discount = db.get_discount(code)
+        if discount['category'] not in used_categories:
+            total_discount += discount['percentage']
+            used_categories.add(discount['category'])
+    
+    return price * (1 - total_discount / 100)
+```
+
+---
+
+### Type N: Refund/Return Logic Flaws
+
+**Description**: Application allows refund abuse through repeated returns, price manipulation after purchase, or refund-to-different-account attacks.
+
+| Aspect | Details |
+|--------|---------|
+| **Attack Vector** | Request multiple refunds, buy low-price item → return at high price, refund to different account |
+| **Impact** | Financial fraud, revenue loss, account takeover |
+| **Detection** | Test refund endpoints, check price validation, verify refund destination |
+
+#### 🎯 Example: Price Manipulation Refund
+
+**Demo Scenario**: Store processes refunds based on user-provided price at time of request
+
+**Purchase (Normal)**:
+```http
+POST /cart/checkout HTTP/1.1
+Host: shop.example.com
+
+product_id=jacket&quantity=1&price=100
+Response: order_id=12345
+```
+
+**Refund (Malicious)**:
+```http
+POST /refund HTTP/1.1
+Host: shop.example.com
+
+order_id=12345&refund_amount=1000
+```
+
+**Expected Output**: Refund = $100 (original purchase price)  
+**Actual Output**: Refund = $1,000 (user-manipulated price)  
+**Result**: $900 profit from single item
+
+**Implementation**:
+```python
+# ❌ VULNERABLE
+def process_refund(order_id, refund_amount):
+    order = db.get_order(order_id)
+    db.add_credit(order['user_id'], refund_amount)
+
+# ✅ SECURE
+def process_refund_secure(order_id, requested_amount):
+    order = db.get_order(order_id)
+    
+    # Verify order exists and is eligible for refund
+    if order['status'] != 'completed':
+        raise Error("Order not eligible for refund")
+    
+    if order['refunded']:
+        raise Error("Order already refunded")
+    
+    # Use original purchase price (NOT user-provided)
+    actual_refund = min(requested_amount, order['total_price'])
+    db.add_credit(order['user_id'], actual_refund)
+    order['refunded'] = True
+    db.update_order(order)
+```
+
+---
+
+### Type O: Waiting Room/Queue Bypass
+
+**Description**: Application doesn't properly validate queue tokens, allowing attackers to skip waiting rooms (ticket sales, product launches).
+
+| Aspect | Details |
+|--------|---------|
+| **Attack Vector** | Forge queue tokens, manipulate wait time parameters, reuse expired tokens |
+| **Impact** | Early access to limited inventory, unfair advantage |
+| **Detection** | Inspect queue token generation, test token validation, check wait time logic |
+
+#### 🎯 Example: Queue Token Forgery
+
+**Demo Scenario**: Concert ticket sale requires queue token with wait time
+
+**Normal Queue Entry**:
+```http
+GET /queue HTTP/1.1
+Host: tickets.example.com
+
+Response: queue_token=abc123&wait_time=300
+```
+
+**Malicious Payload**:
+```http
+GET /ticket-purchase HTTP/1.1
+Host: tickets.example.com
+Cookie: queue_token=abc123
+
+{
+  "queue_token": "abc123",
+  "wait_time": 0,
+  "ticket_id": "VIP_section"
+}
+```
+
+**Alternative (Token Reuse)**:
+```http
+# Save valid token from friend who waited
+GET /ticket-purchase HTTP/1.1
+Cookie: queue_token=FRIEND_TOKEN
+
+# Use friend's token to bypass queue
+```
+
+**Expected Output**: Queue enforced (5-minute wait)  
+**Actual Output**: Immediate purchase access  
+**Result**: VIP tickets purchased before regular users
+
+**Implementation**:
+```python
+# ❌ VULNERABLE
+def purchase_ticket(queue_token, ticket_id):
+    token_data = parse_token(queue_token)
+    # No validation of wait time or token expiry
+    return sell_ticket(ticket_id)
+
+# ✅ SECURE
+def purchase_ticket_secure(queue_token, ticket_id, user_session):
+    token_data = verify_token(queue_token)
+    
+    # Validate token exists and belongs to user
+    if token_data['user_id'] != user_session['user_id']:
+        raise Error("Invalid token")
+    
+    # Check token not expired
+    if token_data['expires_at'] < datetime.now():
+        raise Error("Token expired")
+    
+    # Verify wait time completed
+    if token_data['wait_time_completed'] < token_data['required_wait']:
+        raise Error("Queue not completed")
+    
+    return sell_ticket(ticket_id)
+```
+
+---
+
+### Type P: Subscription Free-Trial Abuse
+
+**Description**: Application allows unlimited trial resets through email manipulation, cookie clearing, or identity spoofing.
+
+| Aspect | Details |
+|--------|---------|
+| **Attack Vector** | Create multiple accounts with similar emails, clear trial cookies, use different payment methods |
+| **Impact** | Free permanent access, revenue loss |
+| **Detection** | Test trial reset mechanisms, check email validation, verify payment method uniqueness |
+
+#### 🎯 Example: Trial Email Enumeration
+
+**Demo Scenario**: Service offers 30-day free trial, tracks by email domain
+
+**Payload Sequence**:
+```bash
+# Trial 1
+POST /signup
+email=user1@example.com → Trial activated
+
+# Trial 2 (after 29 days)
+POST /signup
+email=user2@example.com → New trial activated
+
+# Trial 3-100...
+email=user3@example.com
+email=user4@example.com
+...
+```
+
+**Alternative (Plus Addressing)**:
+```bash
+# Gmail plus addressing bypasses email uniqueness
+POST /signup
+email=user+trial1@gmail.com → Trial 1
+POST /signup
+email=user+trial2@gmail.com → Trial 2
+POST /signup
+email=user+trial3@gmail.com → Trial 3
+```
+
+**Expected Output**: One trial per user (30 days)  
+**Actual Output**: Unlimited trials (permanent free access)  
+**Result**: $300/month service used forever without payment
+
+**Implementation**:
+```python
+# ❌ VULNERABLE
+def activate_trial(email):
+    if not db.is_trial_used(email):
+        db.create_trial(email, days=30)
+
+# ✅ SECURE
+def activate_trial_secure(email, payment_method, user_ip):
+    # Normalize email (remove plus addressing)
+    normalized_email = normalize_email(email)  # user@gmail.com
+    
+    # Check multiple identifiers
+    if db.is_trial_used(normalized_email):
+        raise Error("Trial already used")
+    
+    if db.is_trial_used_by_payment(payment_method):
+        raise Error("Trial already used with this payment")
+    
+    if db.is_trial_used_by_ip(user_ip):
+        raise Error("Trial already used from this device")
+    
+    db.create_trial(normalized_email, days=30)
+    db.record_trial_payment(payment_method)
+    db.record_trial_ip(user_ip)
+```
+
+---
+
+### Type Q: Loyalty Points Manipulation
+
+**Description**: Application allows points accumulation abuse through review spamming, fake purchases, or referral loops.
+
+| Aspect | Details |
+|--------|---------|
+| **Attack Vector** | Spam reviews for points, create fake accounts for referrals, buy-sell-return loops |
+| **Impact** | Points inflation, free products, unauthorized discounts |
+| **Detection** | Test points attribution logic, check review validation, verify referral uniqueness |
+
+#### 🎯 Example: Referral Loop Abuse
+
+**Demo Scenario**: Store gives 100 points ($10) for each referral
+
+**Payload Sequence**:
+```bash
+# Step 1: Create main account
+POST /signup
+email=attacker@example.com
+Response: user_id=1001
+
+# Step 2: Create 100 fake accounts
+for i in {1..100}; do
+  POST /signup
+  email=fake$i@example.com
+  POST /referral
+  referrer_code=attacker_1001
+done
+
+# Step 3: Collect points
+GET /my-points
+Response: 10,000 points ($1000 value)
+```
+
+**Expected Output**: 100 points per month (normal usage)  
+**Actual Output**: 10,000 points (100 fake referrals)  
+**Result**: $1,000 free products
+
+**Implementation**:
+```python
+# ❌ VULNERABLE
+def add_referral_points(referrer_email, new_user_email):
+    points = db.get_referral_points()
+    db.add_points(referrer_email, points)
+
+# ✅ SECURE
+def add_referral_points_secure(referrer_id, new_user_id, new_user_email, payment_method):
+    # Verify new user is real (made purchase)
+    if not db.has_purchase(new_user_id):
+        raise Error("Referral must make purchase")
+    
+    # Check referral not duplicate
+    if db.is_duplicate_referral(referrer_id, new_user_id):
+        raise Error("Duplicate referral")
+    
+    # Limit monthly referrals
+    monthly_referrals = db.count_monthly_referrals(referrer_id)
+    if monthly_referrals >= 10:
+        raise Error("Monthly referral limit exceeded")
+    
+    # Verify different email domain/payment
+    if db.same_domain_referral(referrer_id, new_user_email):
+        raise Error("Same domain not allowed")
+    
+    if db.same_payment_referral(referrer_id, payment_method):
+        raise Error("Same payment not allowed")
+    
+    points = db.get_referral_points()
+    db.add_points(referrer_id, points)
+    db.record_referral(referrer_id, new_user_id)
+```
+
+---
+
+### Type R: Multi-Tenant Data Leakage
+
+**Description**: Application fails to properly isolate data between organizations/users in SaaS platforms.
+
+| Aspect | Details |
+|--------|---------|
+| **Attack Vector** | Manipulate organization_id, company_id, tenant_id parameters to access other organizations' data |
+| **Impact** | Corporate data breach, competitive intelligence, privacy violation |
+| **Detection** | Test resource IDs across organizations, check tenant validation, verify data isolation |
+
+#### 🎯 Example: Organization ID Manipulation
+
+**Demo Scenario**: SaaS platform at `/documents?org_id=500`
+
+**Normal Request (Company A)**:
+```http
+GET /documents?org_id=500 HTTP/1.1
+Host: saas.example.com
+Cookie: session=company_a_token
+```
+
+**Malicious Payload**:
+```http
+GET /documents?org_id=501 HTTP/1.1
+Host: saas.example.com
+Cookie: session=company_a_token
+```
+
+**Expected Output**: Access denied (org_id ≠ session organization)  
+**Actual Output**: Company B's documents returned (no validation)  
+**Result**: Competitor's confidential documents disclosed
+
+**Implementation**:
+```python
+# ❌ VULNERABLE
+def get_documents(request, user_session):
+    org_id = request.params['org_id']
+    return db.get_documents(org_id)
+
+# ✅ SECURE
+def get_documents_secure(request, user_session):
+    org_id = request.params['org_id']
+    
+    # Verify user belongs to organization
+    user_org = db.get_user_organization(user_session['user_id'])
+    if user_org['org_id'] != org_id:
+        raise Error("Unauthorized")
+    
+    # Verify organization exists and is active
+    org = db.get_organization(org_id)
+    if not org or not org['active']:
+        raise Error("Organization not found")
+    
+    return db.get_documents(org_id)
+```
+
+---
+
+### Type S: API Rate Limit Bypass
+
+**Description**: Application doesn't rate limit API endpoints properly, allowing brute force or enumeration attacks.
+
+| Aspect | Details |
+|--------|---------|
+| **Attack Vector** | Rotate IP addresses, use multiple API keys, manipulate rate limit headers |
+| **Impact** | Brute force passwords, enumerate user data, exhaust API quotas |
+| **Detection** | Test rate limit enforcement, check IP/API key validation, verify header trust |
+
+#### 🎯 Example: Rate Limit Header Manipulation
+
+**Demo Scenario**: API limits 100 requests/minute, trusts client-provided header
+
+**Normal Request**:
+```http
+GET /api/users HTTP/1.1
+Host: api.example.com
+Response: X-RateLimit-Remaining: 99
+```
+
+**Malicious Payload**:
+```http
+GET /api/users HTTP/1.1
+Host: api.example.com
+X-RateLimit-Remaining: 1000
+
+# Repeat 1000 times
+```
+
+**Alternative (API Key Rotation)**:
+```bash
+# Generate 1000 API keys (if registration unlimited)
+for i in {1..1000}; do
+  POST /api/key-gen
+  Response: api_key=key_$i
+  
+  GET /api/users HTTP/1.1
+  api_key=key_$i
+done
+```
+
+**Expected Output**: 100 requests/minute enforced  
+**Actual Output**: Unlimited requests (header manipulation)  
+**Result**: 10,000 user records enumerated
+
+**Implementation**:
+```python
+# ❌ VULNERABLE
+def rate_limit_check(request):
+    remaining = request.headers['X-RateLimit-Remaining']
+    if remaining <= 0:
+        raise Error("Rate limit exceeded")
+    return True
+
+# ✅ SECURE
+def rate_limit_check_secure(user_id, endpoint):
+    # Track server-side (NOT client headers)
+    key = f"rate_limit:{user_id}:{endpoint}"
+    current_count = redis.get(key) or 0
+    
+    if current_count >= 100:
+        raise Error("Rate limit exceeded")
+    
+    redis.incr(key)
+    redis.expire(key, 60)  # 1 minute window
+    
+    return True
+```
+
+---
+
+### Type T: Time-Based Logic Flaws
+
+**Description**: Application doesn't properly validate time-based constraints (auctions, flash sales, limited-time offers).
+
+| Aspect | Details |
+|--------|---------|
+| **Attack Vector** | Manipulate client timestamps, exploit timezone differences, use server time drift |
+| **Impact** | Early access to sales, extended trial periods, auction manipulation |
+| **Detection** | Test time validation, check timezone handling, verify server vs. client time |
+
+#### 🎯 Example: Flash Sale Time Manipulation
+
+**Demo Scenario**: Flash sale starts at 12:00 PM EST, validates timestamp client-side
+
+**Normal Request (Before Sale)**:
+```http
+POST /purchase HTTP/1.1
+Host: sale.example.com
+Timestamp: 2024-06-20T11:59:00Z
+
+{ "product": "limited_item", "quantity": 1 }
+```
+
+**Expected Output**: "Sale not started yet"  
+**Actual Output**: Purchase accepted (client timestamp trusted)
+
+**Malicious Payload**:
+```http
+POST /purchase HTTP/1.1
+Host: sale.example.com
+Timestamp: 2024-06-20T12:01:00Z  # Fake future time
+
+{ "product": "limited_item", "quantity": 1 }
+```
+
+**Result**: Purchase made 1 minute before sale officially started
+
+**Implementation**:
+```python
+# ❌ VULNERABLE
+def purchase_flash_sale(request, product):
+    client_timestamp = request.headers['Timestamp']
+    sale_start = datetime.parse("2024-06-20T12:00:00Z")
+    
+    if client_timestamp < sale_start:
+        raise Error("Sale not started")
+    
+    return process_purchase(product)
+
+# ✅ SECURE
+def purchase_flash_sale_secure(request, product):
+    # Use SERVER time (NOT client timestamp)
+    server_timestamp = datetime.now(timezone.utc)
+    sale_start = datetime.parse("2024-06-20T12:00:00Z")
+    
+    if server_timestamp < sale_start:
+        raise Error("Sale not started")
+    
+    # Check sale not ended
+    sale_end = datetime.parse("2024-06-20T18:00:00Z")
+    if server_timestamp > sale_end:
+        raise Error("Sale ended")
+    
+    return process_purchase(product)
+```
+
+---
+
+## 📊 **UPDATED COMPLETE TYPE SUMMARY:**
+
+| Type | Vulnerability Name | Primary Impact |
+|------|-------------------|----------------|
+| A | Excessive Trust in Client-Side Controls | Price manipulation |
+| B | Integer Overflow/Underflow | Free items, credit inflation |
+| C | Infinite Money/Credit Loop | Unlimited store credit |
+| D | Authentication Bypass via Encryption Oracle | Admin access |
+| E | Inconsistent Security Controls | Admin panel exposure |
+| F | Email Parser Discrepancy | Domain validation bypass |
+| G | Email Truncation | Domain validation bypass |
+| H | Workflow Skipping | Free items |
+| I | Race Condition/Timing Attacks | Double-spending |
+| J | Vertical Privilege Escalation | Admin access |
+| K | Horizontal Privilege Escalation (IDOR) | Data breach |
+| L | Mass Assignment | Privilege escalation |
+| M | Coupon/Discount Stacking | Revenue theft |
+| N | Refund/Return Logic Flaws | Financial fraud |
+| O | Waiting Room/Queue Bypass | Early access |
+| P | Subscription Free-Trial Abuse | Free permanent access |
+| Q | Loyalty Points Manipulation | Points inflation |
+| R | Multi-Tenant Data Leakage | Corporate data breach |
+| S | API Rate Limit Bypass | Brute force/enumeration |
+| T | Time-Based Logic Flaws | Early/extended access |
+
+---
+
+**Total: 20 comprehensive business logic vulnerability types**
 
 ---
 
