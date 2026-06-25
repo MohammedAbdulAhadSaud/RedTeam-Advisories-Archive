@@ -8,7 +8,7 @@
 
 ---
 
-## 🌐 What are Race Condition Vulnerabilities?
+##  What are Race Condition Vulnerabilities?
 
 **Race Conditions** are vulnerabilities that occur when websites process requests **concurrently without adequate safeguards**. This allows multiple distinct threads to interact with the **same data at the same time**, resulting in a "collision" that causes **unintended application behavior**.
 
