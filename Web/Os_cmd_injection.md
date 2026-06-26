@@ -1,4 +1,4 @@
-# 📑 Deep-Dive Architectural Study: OS Command Injection
+# OS Command Injection
 
 **Category**: Advanced Input Validation & OS Interactivity  
 **Severity**: Critical (Potential for Complete Host Compromise)
@@ -22,7 +22,7 @@ Instead of treating the input strictly as static text data, the shell execution 
 
 ---
 
-## 🔬 1. Low-Level Architectural Mechanics
+##  1. Low-Level Architectural Mechanics
 
 To understand command injection completely, you must look at how an Operating System manages processes. 
 
