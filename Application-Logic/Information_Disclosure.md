@@ -1,4 +1,4 @@
-# 📑 Deep-Dive Architectural Study: Information Disclosure Vulnerabilities
+#  Deep-Dive Architectural Study: Information Disclosure Vulnerabilities
 
 **Category**: Sensitive Data Leakage & Infrastructure Exposure  
 **Severity**: Medium to Critical (Direct Data Breach or Enabling High-Severity Attacks)  
@@ -7,7 +7,7 @@
 
 ---
 
-## 🌐 What are Information Disclosure Vulnerabilities?
+##  What are Information Disclosure Vulnerabilities?
 
 **Information Disclosure** (also known as **Information Leakage**, **Data Leakage**, or **Sensitive Data Exposure**) is when a website unintentionally reveals sensitive information to its users. This includes:
 
@@ -41,7 +41,7 @@ Unlike other vulnerabilities that **exploit** functionality, information disclos
 
 ---
 
-## 🔬 1. Low-Level Architectural Mechanics
+##  1. Low-Level Architectural Mechanics
 
 ### The Information Disclosure Attack Chain
 
