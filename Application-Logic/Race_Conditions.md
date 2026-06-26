@@ -1,5 +1,5 @@
 
-#  Deep-Dive Architectural Study: Race Condition Vulnerabilities
+#  Race Condition Vulnerabilities
 
 **Category**: Concurrent Request Processing & Business Logic Flaws  
 **Severity**: Medium to Critical (Limit Overruns, Authentication Bypass, Data Corruption)  
