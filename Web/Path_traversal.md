@@ -1,4 +1,4 @@
-# 📑 Architectural Study: Path Traversal
+# Path Traversal
 
 **Category:** Input Validation & Filesystem Isolation  
 **Severity**: High to Critical (Potential for Sensitive Data Disclosure & Host Compromise)
@@ -20,7 +20,7 @@ To ensure precise classification during documentation, reporting, and threat mod
 
 ---
 
-## 🔬 1. Low-Level Architectural Mechanics
+##  1. Low-Level Architectural Mechanics
 
 To understand path traversal completely, it is essential to examine how an operating system interprets path tokens and restricts application processes.
 
