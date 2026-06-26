@@ -1,4 +1,4 @@
-#  Deep-Dive Architectural Study: Information Disclosure Vulnerabilities
+#  Information Disclosure Vulnerabilities
 
 **Category**: Sensitive Data Leakage & Infrastructure Exposure  
 **Severity**: Medium to Critical (Direct Data Breach or Enabling High-Severity Attacks)  
