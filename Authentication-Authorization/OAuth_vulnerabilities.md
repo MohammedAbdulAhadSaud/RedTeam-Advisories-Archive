@@ -1,11 +1,11 @@
-# 📑 Deep-Dive Architectural Study: OAuth 2.0 Architectural & Implementation Flaws
+#  Deep-Dive Architectural Study: OAuth 2.0 Architectural & Implementation Flaws
 
 **Category**: Client-Side Application Logic and Service Configurations  
 **Severity Focus**: High to Critical (Potential for Full Account Takeover & Token Theft)
 
 ---
 
-## 🔬 1. Client-Side Application Vulnerabilities
+## 1. Client-Side Application Vulnerabilities
 
 ### Module 01: Token Exfiltration via Broken Whitelist Validation & Open Redirects
 *   **CWE Mapping**: CWE-601 (Open Redirect), CWE-20 (Improper Input Validation)
@@ -13,7 +13,7 @@
 
 ---
 
-## 🌐 What is OAuth 2.0?
+##  What is OAuth 2.0?
 
 **OAuth 2.0 (Open Authorization)** is an industry-standard delegation framework that allows a third-party website or client application to access restricted user resources on another service (the Identity Provider or IdP) without exposing the user's actual login credentials or password. 
 
