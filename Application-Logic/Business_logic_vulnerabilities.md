@@ -1,4 +1,4 @@
-# 📑 Deep-Dive Architectural Study: Business Logic Vulnerabilities
+# Business Logic Vulnerabilities
 
 **Category**: Application Workflow & State Management Flaws  
 **Severity**: High to Critical (Potential for Account Takeover, Financial Fraud & Complete Business Rule Circumvention)  
@@ -7,7 +7,7 @@
 
 ---
 
-## 🌐 What are Business Logic Vulnerabilities?
+##  What are Business Logic Vulnerabilities?
 
 **Business Logic Vulnerabilities** (also known as **Logic Flaws**, **Application Logic Vulnerabilities**, or **Workflow Flaws**) are critical design and implementation flaws that allow attackers to elicit unintended behavior from an application by manipulating legitimate functionality to achieve malicious goals.
 
@@ -33,7 +33,7 @@ Unlike traditional vulnerabilities (SQL injection, XSS, etc.), logic flaws are *
 
 ---
 
-## 🔬 1. Low-Level Architectural Mechanics
+##  1. Low-Level Architectural Mechanics
 
 ### The Developer Assumption vs. Attacker Reality Gap
 
