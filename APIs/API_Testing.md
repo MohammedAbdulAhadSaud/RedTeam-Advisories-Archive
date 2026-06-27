@@ -1,4 +1,4 @@
-# 🌐 Deep-Dive Architectural Study: API Testing & Server-Side Vulnerabilities
+#  API Testing & Server-Side Vulnerabilities
 
 **Category**: Client-Side Application Logic and Service Configurations  
 **Severity Focus**: High to Critical (Potential for Account Takeover, Data Breach, Admin Access)  
@@ -7,7 +7,7 @@
 
 ---
 
-## 🔬 1. API Reconnaissance & Discovery
+## 1. API Reconnaissance & Discovery
 
 ### Module 01: API Documentation Discovery
 *   **CWE Mapping**: CWE-200 (Information Disclosure)
@@ -25,13 +25,13 @@ Common documentation endpoints:
 - `/api/swagger/v1`
 - `/v1/api-docs`
 
-#### 🎯 Raw Discovery Request
+#### Raw Discovery Request
 ```text
 GET /swagger/index.html HTTP/1.1
 Host: vulnerable-app.com
 ```
 
-#### 📄 Demo Server Response (Interactive Swagger Docs)
+#### Demo Server Response (Interactive Swagger Docs)
 ```http
 HTTP/1.1 200 OK
 Content-Type: text/html
