@@ -1,4 +1,4 @@
-# 🔐 Deep-Dive Architectural Study: Authentication Vulnerabilities
+# Deep-Dive Architectural Study: Authentication Vulnerabilities
 
 **Category**: Identity Verification & Access Control Flaws  
 **Severity**: Critical (Account Takeover, Data Breach, Full System Control)  
@@ -7,7 +7,7 @@
 
 ---
 
-## 🔬 1. Username Enumeration Vulnerabilities
+## 1. Username Enumeration Vulnerabilities
 
 ### Module 01: Enumeration via Different Response Messages
 *   **CWE Mapping**: CWE-200 (Information Disclosure)
@@ -27,7 +27,7 @@ The attacker exploits this by:
 - Comparing response messages
 - Building a list of valid usernames
 
-#### 🎯 Raw Injection Payload (Testing Username Existence)
+#### Raw Injection Payload (Testing Username Existence)
 ```text
 POST /login HTTP/1.1
 Host: vulnerable-app.com
