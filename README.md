@@ -6,7 +6,7 @@
 
 | Web Security | Authentication & Authorization | HTTP Attacks |
 |---|---|---|
-| [SQL Injection](./Web/SQL%20Injection.md) | [Authentication](./Authentication-Authorization/Authentication.md) | [HTTP Request Smuggling](./HTTP-Attacks/HTTP-Request_Smuggling.md) |
+| [SQL Injection](./Web/SQL%20Injection.md) | [Authentication](./Authentication-Authorization/Authentication-Vulnerabilities.md) | [HTTP Request Smuggling](./HTTP-Attacks/HTTP-Request_Smuggling.md) |
 | [NoSQL Injection](./Web/NoSQL%20Injection.md) | [OAuth Vulnerabilities](./Authentication-Authorization/OAuth_vulnerabilities.md) | [Host Header Attacks](./HTTP-Attacks/HTTP-Host_Header_Attacks.md) |
 | [Cross-Site Scripting](./Web/XSS.md) | [JWT Attacks](./Authentication-Authorization/JWT%20Attacks.md) | [Web Cache Poisoning](./HTTP-Attacks/Web%20Cache%20Poisoning.md) |
 | [Cross-Site Request Forgery](./Web/CSRF.md) | [Access Control](./Authentication-Authorization/Access%20Control.md) | [Web Cache Deception](./HTTP-Attacks/Web-Cache_Deception.md) |
