@@ -1,4 +1,4 @@
-# Deep-Dive Architectural Study: Authentication Vulnerabilities
+# Authentication Vulnerabilities
 
 **Category**: Identity Verification & Access Control Flaws  
 **Severity**: Critical (Account Takeover, Data Breach, Full System Control)  
