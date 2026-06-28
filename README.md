@@ -25,6 +25,6 @@
 
 | API Security | Application Logic | AI Security |
 |---|---|---|
-| [API Testing](./APIs/API_Testing.md) | [Business Logic Vulnerabilities](./Application-Logic/Business_logic_vulnerabilities.md) | [Web LLM Attacks](./AI/Web%20LLM%20Attacks.md) |
-| [GraphQL API Vulnerabilities](./APIs/GraphQL%20API%20Vulnerabilities.md) | [Race Conditions](./Application-Logic/Race_Conditions.md) |  |
+| [API Testing](./APIs/API_Vulnerabilities.md) | [Business Logic Vulnerabilities](./Application-Logic/Business_logic_vulnerabilities.md) | [Web LLM Attacks](./AI/Web%20LLM%20Attacks.md) |
+| [GraphQL API Vulnerabilities](./APIs/GraphQL_API_Vulnerabilities.md) | [Race Conditions](./Application-Logic/Race_Conditions.md) |  |
 |  | [Information Disclosure](./Application-Logic/Information_Disclosure.md) |  |
