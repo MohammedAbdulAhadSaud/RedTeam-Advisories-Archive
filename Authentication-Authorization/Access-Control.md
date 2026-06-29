@@ -9,7 +9,7 @@
 
 ---
 
-## 🔬 1. Access Control Fundamentals
+##  1. Access Control Fundamentals
 
 ### Module 01: Vertical vs Horizontal Access Control Architecture
 *   **CWE Mapping**: CWE-287 (Improper Authorization)
