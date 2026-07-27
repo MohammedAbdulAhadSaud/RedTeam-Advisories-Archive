@@ -16,3 +16,7 @@ To ensure precise classification during reporting and threat modeling, map this 
 The vulnerability occurs when the front-end and back-end servers interpret the boundaries of an HTTP request differently, usually due to a disagreement between the Content-Length and Transfer-Encoding headers.
 
 
+## Root Cause
+
+HTTP Request Smuggling occurs due to inconsistent HTTP request parsing between intermediary components (such as frontend proxies, load balancers, or CDNs) and backend servers. When these components interpret request boundaries differently—typically because of conflicting `Content-Length` and `Transfer-Encoding` headers or protocol parsing inconsistencies—an attacker can desynchronize the request stream and cause unintended requests to be processed by the backend.
+
