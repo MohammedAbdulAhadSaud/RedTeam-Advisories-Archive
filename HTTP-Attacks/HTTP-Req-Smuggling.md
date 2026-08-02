@@ -19,3 +19,68 @@ The vulnerability occurs when the front-end and back-end servers interpret the b
 ## Root Cause
 
 HTTP Request Smuggling occurs due to inconsistent HTTP request parsing between intermediary components (such as frontend proxies, load balancers, or CDNs) and backend servers. When these components interpret request boundaries differently—typically because of conflicting `Content-Length` and `Transfer-Encoding` headers or protocol parsing inconsistencies—an attacker can desynchronize the request stream and cause unintended requests to be processed by the backend.
+
+# Classification of HTTP Request Smuggling Vulnerabilities
+
+HTTP Request Smuggling variations are classified based on how the front-end proxy and back-end application server handle conflicting message-length headers (`Content-Length` vs. `Transfer-Encoding`), or how modern protocols interact with legacy back-ends.
+
+---
+
+### 1. CL.TE (Content-Length / Transfer-Encoding)
+* **The Architecture:** The Front-End proxy relies on the `Content-Length` header, while the Back-End application server prioritizes the `Transfer-Encoding: chunked` header.
+* **The Mechanism:** The attacker crafts a request where the outer `Content-Length` encapsulates the entire payload, forcing the front-end to forward it completely. However, the back-end processes the data as chunked and terminates reading early upon hitting the internal `0` chunk terminator. The remaining data is left trapped in the network connection buffer.
+* **Core Core Layout Structure:**
+```http
+POST / HTTP/1.1
+Host: target.com
+Content-Type: application/x-www-form-urlencoded
+Content-Length: [Calculated Byte Count][total byte Count]
+Transfer-Encoding: chunked
+
+0
+
+GET /target-endpoint HTTP/1.1
+Host: target.com
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 10
+
+x=
+```
+*   **The Front-End View (Content-Length):** The front-end ignores the headers and counts everything *after* the first blank line (the line after `Transfer-Encoding: chunked`). It counts the `0`, the line breaks, and the entire smuggled `GET` request all the way down to the `=` sign. In this exact example, that equals **139 bytes**.
+*   **The Back-End View (Transfer-Encoding):** The back-end reads `0\r\n\r\n`. Mathematically, this sequence means "Zero bytes left in this chunked message, and this is the final empty line." The back-end completely ignores the remaining bytes (`GET /target-endpoint...`) during this transaction.
+
+*   We explicitly tell the back-end that our smuggled request has a body size of **10 bytes**.
+*   However, we only provide 2 bytes of data (`x=`). 
+*   **The Poisoning Effect:** The back-end processes our smuggled request but freezes because it is missing 8 bytes of data. It holds the connection open. 
+*   When an innocent user sends a normal request (e.g., `GET /index.html HTTP/1.1`), the server automatically glues that user's incoming text directly onto our `x=`, like this: `x=GET /index.html HTTP/1.1`.
+*   Our parameter safely absorbs their request, preventing their data from breaking our smuggled HTTP syntax.
+
+### 2. TE.CL (Transfer-Encoding / Content-Length)
+* **The Architecture:** The Front-End proxy utilizes the `Transfer-Encoding: chunked` header, while the Back-End application server prioritizes the `Content-Length` header.
+* **The Mechanism:** The front-end processes the request body using chunked lengths and forwards everything down to the terminal `0` chunk. However, the back-end ignores the chunks and looks only at the small `Content-Length` counter. It terminates reading early after processing the first chunk size indicator line, leaving the entire smuggled request trapped inside the network connection buffer.
+* **Core Layout Structure:**
+```http
+POST / HTTP/1.1
+Host: target.com
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 4
+Transfer-Encoding: chunked
+
+5c
+GET /target-endpoint HTTP/1.1
+Host: target.com
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 10
+
+x=
+0
+
+
+```
+* **The Front-End View (Transfer-Encoding):** The front-end parses the payload as standard chunked data. It reads the hex value `5c` (92 in decimal) and swallows the subsequent 92 bytes of the smuggled request. It then encounters the `0` followed by trailing blank lines at the absolute bottom, determines the message is fully complete, and forwards the whole transmission downstream.
+* **The Back-End View (Content-Length):** The back-end completely ignores the chunked settings and reads strictly based on `Content-Length: 4`. It counts exactly 4 bytes from the start of the body: the `5`, the `c`, and the hidden carriage return and line feed (`\r\n`). It treats this tiny line as the entire request body, handles the transaction, and ignores the rest of the stream.
+* We explicitly set the `Content-Length` header inside our smuggled request to **10 bytes**.
+* However, we only provide 2 bytes of actual parameter data (`x=`) before the terminal `0` chunk.
+* **The Poisoning Effect:** The back-end handles the main connection cutoff, but when it eventually attempts to process the leftover, smuggled `GET /target-endpoint` request, it halts because it expects 8 more bytes of body data to satisfy that internal counter of 10.
+* When an innocent user makes a standard connection (e.g., `GET /index.html HTTP/1.1`), the back-end automatically splices their incoming request headers directly onto our trailing `x=`, creating a combined parameter value like `x=GET /index.html HTTP/1.1`.
+* Our parameter securely captures their incoming request string, preventing their protocol syntax from breaking our smuggled HTTP request structure and forcing the server to return the target page.
