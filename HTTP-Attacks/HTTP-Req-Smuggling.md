@@ -128,3 +128,33 @@ x=1
 
 * **The Security Impact:** This attack demonstrates that request smuggling can expose hidden proxy-injected headers. If the application trusts these headers for authentication or authorization, an attacker can forge them to bypass access controls and perform privileged administrative actions.
 
+### b. Exploiting HTTP Request Smuggling to Capture Other Users' Requests
+
+* **The Objective:** Exploit a **CL.TE** request smuggling vulnerability to capture another user's HTTP request, extract their session cookie, and hijack their authenticated session.
+
+* **The Mechanism:** The attacker smuggles a `POST /post/comment` request with an intentionally oversized `Content-Length`. The back-end waits for the remaining body bytes, causing the next user's request to be appended to the attacker's request body. Because the application stores the submitted comment, the victim's HTTP request—including sensitive headers such as `Cookie`—is stored and later displayed to the attacker.
+
+* **Core Layout Structure:**
+
+```http
+POST / HTTP/1.1
+Host: target.com
+Content-Type: application/x-www-form-urlencoded
+Content-Length: [Calculated Byte Count]
+Transfer-Encoding: chunked
+
+0
+
+POST /post/comment HTTP/1.1
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 400
+Cookie: session=<attacker-session>
+
+csrf=<csrf-token>&postId=5&name=Attacker&email=attacker@example.com&website=&comment=test
+```
+
+* **The Request Capture:** Since the smuggled request declares a larger `Content-Length` than the supplied body, the back-end continues waiting for additional bytes. When the next user's request arrives on the reused connection, it becomes part of the unfinished comment body and is stored by the application.
+
+* **The Session Hijacking:** The attacker retrieves the stored comment, extracts the victim's `Cookie` header from the captured request, and reuses the session cookie to access the victim's account without knowing their credentials.
+
+* **The Security Impact:** This attack demonstrates that HTTP Request Smuggling can capture requests belonging to other users, leading to session hijacking, credential exposure, and unauthorized account access.
