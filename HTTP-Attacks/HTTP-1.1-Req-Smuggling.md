@@ -1,4 +1,4 @@
-# HTTP request smuggling
+# HTTP/1.1 request smuggling
 
 **Category: HTTP Request Smuggling (Request Desynchronization)**
 **Severity: High or Critical**
