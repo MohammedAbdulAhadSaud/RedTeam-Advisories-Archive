@@ -143,3 +143,24 @@ x=1
 * **The XSS Delivery:** The attacker hosts a malicious JavaScript payload at `/resources` on the exploit server. By repeatedly poisoning the connection and timing the attack with the victim's request, the victim is redirected to the malicious resource, causing `alert(document.cookie)` to execute.
 
 * **The Security Impact:** H2.CL request smuggling can be combined with open-redirect behavior to deliver attacker-controlled JavaScript to other users, potentially resulting in cookie theft, session compromise, and account takeover.
+
+### c. HTTP/2 Request Smuggling via CRLF Injection
+
+* **The Objective:** Exploit an **HTTP/2-exclusive CRLF injection** vector to smuggle a request, capture another user's request containing their session cookie, and use the stolen cookie to access their account.
+
+* **The Mechanism:** The front-end downgrades HTTP/2 requests to HTTP/1.1 but fails to properly sanitize CRLF characters in HTTP/2 headers. By injecting `\r\n` followed by `Transfer-Encoding: chunked`, the attacker introduces a new HTTP/1.1 header during the downgrade and creates a request smuggling condition.
+
+* **Core Layout Structure:**
+```http
+POST / HTTP/2
+Host: target.com
+foo: bar\r\n Transfer-Encoding: chunked
+
+0
+
+POST / HTTP/1.1
+Host: target.com
+Cookie: session=YOUR-SESSION-COOKIE
+Content-Length: 800
+
+search=x
