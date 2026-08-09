@@ -151,6 +151,7 @@ x=1
 * **The Mechanism:** The front-end downgrades HTTP/2 requests to HTTP/1.1 but fails to properly sanitize CRLF characters in HTTP/2 headers. By injecting `\r\n` followed by `Transfer-Encoding: chunked`, the attacker introduces a new HTTP/1.1 header during the downgrade and creates a request smuggling condition.
 
 * **Core Layout Structure:**
+
 ```http
 POST / HTTP/2
 Host: target.com
@@ -164,3 +165,53 @@ Cookie: session=YOUR-SESSION-COOKIE
 Content-Length: 800
 
 search=x
+```
+
+* **The Request Capture:** The oversized `Content-Length` causes the backend to wait for additional data. When the victim subsequently sends a request over the same connection, their request is appended to the smuggled request body and stored by the application's search functionality.
+
+* **The Session Hijacking:** The stored victim request contains their `Cookie` header. The attacker extracts the victim's session cookie and reuses it to access the victim's authenticated account.
+
+* **The Security Impact:** HTTP/2 request smuggling through CRLF injection can allow attackers to bypass normal HTTP/2 header restrictions during protocol downgrading, capture cross-user requests, steal session cookies, and ultimately take over authenticated user accounts.
+
+
+### d. HTTP/2 Request Splitting via CRLF Injection
+
+* **The Objective:** Exploit an **HTTP/2 request splitting vulnerability via CRLF injection** to poison the backend response queue, capture the administrator's session cookie, access `/admin`, and delete the user `carlos`.
+
+* **The Mechanism:** The frontend downgrades HTTP/2 requests to HTTP/1.1 but fails to properly sanitize CRLF characters in HTTP/2 headers. By injecting `\r\n` sequences into a header value, the attacker can split the downgraded request and inject a second HTTP/1.1 request. When the frontend adds the final `\r\n\r\n`, the injected request becomes a complete request and poisons the backend response queue.
+
+* **Core Layout Structure:**
+
+```text
+HTTP/2 Request
+      ↓
+HTTP/2 → HTTP/1.1 Downgrade
+      ↓
+CRLF Injection
+      ↓
+HTTP/1.1 Request Splitting
+      ↓
+Backend Response Queue Poisoning
+```
+
+```http
+GET /x HTTP/2
+Host: target.com
+foo: bar\r\n \r\n GET /x HTTP/1.1\r\n Host: target.com
+```
+
+* **The Response Queue Poisoning:** The injected `GET /x` request produces a predictable `404` response. When another user's request is processed on the poisoned backend connection, the attacker can receive a response intended for that user. Repeating the attack eventually captures the administrator's `302` response containing their new session cookie.
+
+* **The Session Hijacking:** The captured session cookie can then be used to access the administrative panel:
+
+```http
+GET /admin HTTP/2
+Host: target.com
+Cookie: session=STOLEN-SESSION-COOKIE
+```
+
+* **The Administrative Action:** After obtaining the administrator's session, the attacker accesses `/admin`, identifies the `/admin/delete?username=carlos` endpoint, and changes the request path to delete the user `carlos`.
+
+* **The Security Impact:** HTTP/2 request splitting through CRLF injection can allow attackers to inject HTTP/1.1 requests during protocol downgrading, poison response queues, capture authenticated responses, steal sessions, and perform unauthorized administrative actions.
+
+
