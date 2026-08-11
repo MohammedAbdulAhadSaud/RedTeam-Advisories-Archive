@@ -250,3 +250,61 @@ x=y
 * **The Security Impact:** 0.CL request smuggling demonstrates that request desynchronization can be exploited even without a traditional CL.TE or TE.CL conflict. When combined with an early-response gadget and double desynchronization, it can be converted into an exploitable CL.0-style condition capable of affecting other users and delivering XSS payloads.
 
 The key addition is **“The Double Desync”** — that's the part that distinguishes a basic 0.CL explanation from the actual exploitation technique used to turn the vulnerability into a working attack.
+
+### e. CL.0 (Content-Length / Zero-Length)
+
+* **The Architecture:** The frontend and backend communicate over a persistent HTTP/1.1 connection, but the backend ignores the `Content-Length` header for certain requests or endpoints. The frontend still uses `Content-Length` to determine the request boundary.
+
+* **The Mechanism:** The attacker sends a request with a non-zero `Content-Length` followed by a second HTTP request. The frontend treats the second request as part of the first request body, while the backend ignores the declared body length and interprets the following bytes as a new request. This difference causes the frontend and backend to become desynchronized.
+
+* **Core Layout Structure:**
+
+```http
+POST /vulnerable-endpoint HTTP/1.1
+Host: target.com
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 100
+Connection: keep-alive
+
+GET /admin HTTP/1.1
+Host: target.com
+
+```
+
+* **The Front-End View (Content-Length):** The frontend respects `Content-Length: 100` and considers the bytes following the headers to be part of the `POST` request body. It therefore forwards the complete request over the persistent backend connection.
+
+* **The Back-End View (Ignoring Content-Length):** The vulnerable backend endpoint ignores the `Content-Length` value and treats the first request as having no body. The following `GET /admin` is therefore interpreted as a separate HTTP request.
+
+* **The Desynchronization:** The frontend believes that the smuggled request is part of the original request body, while the backend processes it as a new request. This creates a **CL.0 desynchronization** and allows attacker-controlled requests to reach the backend independently.
+
+* **The Endpoint Dependency:** Unlike CL.TE and TE.CL, CL.0 is generally dependent on specific backend endpoints. Some endpoints may ignore the `Content-Length` header while others process it normally. An attacker can therefore probe different endpoints to identify one that causes the backend to treat the request as zero-length.
+
+* **Demo Payload:**
+
+```http
+POST /static/resource HTTP/1.1
+Host: target.com
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 100
+Connection: keep-alive
+
+GET /admin HTTP/1.1
+Host: target.com
+
+```
+
+* **The Exploitation:** Once a vulnerable endpoint is identified, the attacker replaces the smuggled request with a request to a sensitive endpoint. For example, the attacker could target an administrative function:
+
+```http
+POST /static/resource HTTP/1.1
+Host: target.com
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 100
+Connection: keep-alive
+
+GET /admin/delete?username=carlos HTTP/1.1
+Host: target.com
+
+```
+
+* **The Security Impact:** CL.0 request smuggling can result in request desynchronization, frontend security-control bypass, unauthorized endpoint access, authentication or authorization bypass, cache poisoning, and cross-user request manipulation. The final impact depends on the vulnerable endpoint and the functionality accessible through the smuggled request.
