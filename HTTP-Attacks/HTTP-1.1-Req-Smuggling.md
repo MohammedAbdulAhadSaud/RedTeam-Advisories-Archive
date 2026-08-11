@@ -189,3 +189,64 @@ x=1
 * **The XSS Delivery:** Since the application reflects the `User-Agent` header without proper output encoding, the injected payload (`a"/><script>alert(1)</script>`) executes in the victim's browser, resulting in a reflected Cross-Site Scripting (XSS) attack.
 
 * **The Security Impact:** This attack demonstrates that HTTP Request Smuggling can be combined with reflected XSS to deliver client-side payloads to other users, enabling session theft, phishing, malicious JavaScript execution, and account compromise.
+
+### d. 0.CL Request Smuggling
+
+* **The Objective:** Exploit a **0.CL request smuggling** vulnerability to desynchronize the frontend and backend connections and cause Carlos's browser to execute `alert()`.
+
+* **The Mechanism:** In a 0.CL attack, the frontend and backend disagree about a request with `Content-Length: 0`. The frontend treats the request as having no body, while the backend processes additional bytes differently. Unlike traditional CL.TE or TE.CL attacks, 0.CL exploitation relies on this zero-length discrepancy and usually requires an **early-response gadget** to break the connection deadlock.
+
+* **Core Layout Structure:**
+
+```http
+POST / HTTP/1.1
+Host: target.com
+Content-Length: 0
+
+POST / HTTP/1.1
+Host: target.com
+Content-Length: [Non-Zero Length]
+
+...
+```
+
+* **The Front-End View:** The frontend interprets `Content-Length: 0` as indicating that the request ends immediately after the headers. It can therefore treat the following bytes as belonging to another request or connection sequence.
+
+* **The Back-End View:** The backend interprets the request differently and may continue waiting for data or process the remaining bytes as part of the next request. This creates a desynchronization between the frontend and backend connections.
+
+* **The Early-Response Gadget:** A 0.CL attack can initially result in a connection deadlock because the backend expects a request body that has not yet arrived. An endpoint capable of generating an early response can break this deadlock, allowing the attacker to continue the desynchronization attack.
+
+* **The Double Desync:** A successful 0.CL exploit uses a **double desync**. The first desync establishes the 0.CL condition. The resulting poisoned connection is then used to create a second, CL.0-style desynchronization. This second desync re-poisons the backend connection with an attacker-controlled request prefix, allowing the attacker to influence the victim's subsequent request.
+
+* **Core Layout Structure (Double Desync):**
+
+```http
+POST /early-response HTTP/1.1
+Host: target.com
+Content-Length: [Calculated Length]
+
+GET / HTTP/1.1
+Host: target.com
+```
+
+The second request is aligned so that the backend interprets the remaining bytes as a new request and the connection becomes poisoned.
+
+* **The XSS Payload:** After establishing the double desync, the attacker places a malicious request containing an XSS payload into the poisoned connection. A simplified representation is:
+
+```http
+GET /post?postId=2 HTTP/1.1
+Host: target.com
+User-Agent: XXX"><script>alert()</script>"XXX
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 25
+
+x=y
+```
+
+* **The Victim Request:** When Carlos subsequently visits the homepage, his request is processed through the poisoned backend connection. The attacker-controlled prefix can therefore affect the request/response sequence and cause the vulnerable application's reflected content to contain the XSS payload.
+
+* **The XSS Delivery:** Carlos visits the homepage every five seconds, so the attack must be synchronized with his request. When the double desync successfully poisons the connection immediately before his request, the malicious response reaches his browser and causes `alert()` to execute.
+
+* **The Security Impact:** 0.CL request smuggling demonstrates that request desynchronization can be exploited even without a traditional CL.TE or TE.CL conflict. When combined with an early-response gadget and double desynchronization, it can be converted into an exploitable CL.0-style condition capable of affecting other users and delivering XSS payloads.
+
+The key addition is **“The Double Desync”** — that's the part that distinguishes a basic 0.CL explanation from the actual exploitation technique used to turn the vulnerability into a working attack.
