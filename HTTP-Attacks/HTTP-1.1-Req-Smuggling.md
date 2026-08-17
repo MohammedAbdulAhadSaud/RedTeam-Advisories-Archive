@@ -308,3 +308,51 @@ Host: target.com
 ```
 
 * **The Security Impact:** CL.0 request smuggling can result in request desynchronization, frontend security-control bypass, unauthorized endpoint access, authentication or authorization bypass, cache poisoning, and cross-user request manipulation. The final impact depends on the vulnerable endpoint and the functionality accessible through the smuggled request.
+
+### f. HTTP Request Smuggling by Obfuscating the `Transfer-Encoding` Header
+
+* **The Objective:** Exploit inconsistent handling of duplicate `Transfer-Encoding` headers between the frontend and backend to smuggle a request that is interpreted by the backend as using the method `GPOST`.
+
+* **The Mechanism:** The frontend and backend handle duplicate HTTP headers differently. The attacker sends two `Transfer-Encoding` headers with different values. The frontend accepts the request based on one interpretation, while the backend processes the other `Transfer-Encoding` value and interprets the remaining bytes differently. This parsing discrepancy allows a `GPOST` request to be smuggled past the frontend's restriction on unsupported HTTP methods.
+
+* **Core Layout Structure:**
+
+  ```http
+  POST / HTTP/1.1
+  Host: target.com
+  Content-Type: application/x-www-form-urlencoded
+  Content-Length: 4
+  Transfer-Encoding: chunked
+  Transfer-Encoding: cow
+
+  5c
+
+  GPOST / HTTP/1.1
+  Content-Type: application/x-www-form-urlencoded
+  Content-Length: 15
+
+  x=1
+
+  0
+  ```
+
+* **The Front-End View:** The frontend processes the duplicate `Transfer-Encoding` headers according to its own parsing rules and accepts the outer request because it appears to use an allowed `POST` method. The frontend therefore forwards the request to the backend.
+
+* **The Back-End View:** The backend handles the duplicate `Transfer-Encoding` headers differently and interprets the request boundary according to the other header value. The remaining bytes are consequently processed as a separate request beginning with `GPOST`.
+
+* **The Header Obfuscation:** The key technique is supplying multiple `Transfer-Encoding` headers with conflicting values. This creates an interpretation conflict between the frontend and backend and allows the attacker to bypass the frontend's normal HTTP method restrictions.
+
+* **The Smuggled Request:** After desynchronization, the backend interprets the injected request as:
+
+  ```http
+  GPOST / HTTP/1.1
+  Host: target.com
+  Content-Type: application/x-www-form-urlencoded
+  Content-Length: 15
+
+  x=1
+  ```
+
+  The backend therefore processes the unsupported `GPOST` method even though the frontend only permits `GET` and `POST`.
+
+* **The Security Impact:** Obfuscating the `Transfer-Encoding` header can create HTTP request smuggling vulnerabilities when frontend and backend components normalize or interpret duplicate headers differently. Successful exploitation can allow attackers to bypass frontend security controls, inject unauthorized requests, and potentially chain the desynchronization with other attacks.
