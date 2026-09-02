@@ -265,3 +265,85 @@ Cookie: session=STOLEN-SESSION-COOKIE
 
 * **The Security Impact:** HTTP/2 request tunnelling can bypass frontend access controls and allow attackers to directly influence backend requests. When trusted authentication headers are also exposed or spoofable, the vulnerability can lead to authentication bypass, privilege escalation, unauthorized administrative access, and account compromise.
 
+### f. Web Cache Poisoning via HTTP/2 Request Tunnelling
+
+* **The Objective:** Exploit HTTP/2 request tunnelling to poison a web cache with a response containing an attacker-controlled XSS payload. When a victim later visits the cached page, their browser executes the injected JavaScript.
+
+* **The Mechanism:** The frontend downgrades HTTP/2 requests to HTTP/1.1 but does not consistently sanitize headers and pseudo-headers. By injecting CRLF characters into the `:path` pseudo-header, an attacker can manipulate the downgraded request and tunnel an additional HTTP/1.1 request to the backend. The response from the tunnelled request can then become associated with a cacheable frontend request.
+
+* **Core Layout Structure:**
+
+```http
+GET / HTTP/2
+Host: target.com
+:path: /?cachebuster=1 HTTP/1.1\r\n Foo: bar
+```
+
+The injected CRLF causes the frontend's HTTP/2-to-HTTP/1.1 rewriting process to produce attacker-controlled HTTP/1.1 headers.
+
+* **The Request Tunnel:** The `:path` pseudo-header can be extended to contain a valid HTTP/1.1 request followed by a second request:
+
+```http
+:path: /?cachebuster=2 HTTP/1.1\r\n Host: target.com\r\n \r\n GET /post?postId=1 HTTP/1.1\r\n Foo: bar
+```
+
+The first part keeps the downgraded request valid, while the injected request is processed by the backend as the tunnelled request.
+
+* **The Front-End View:** The frontend initially treats the request as HTTP/2 and later rewrites it into HTTP/1.1. Because the `:path` value contains CRLF sequences, attacker-controlled headers and request boundaries can be introduced during this downgrade.
+
+* **The Back-End View:** The backend receives the resulting HTTP/1.1 data and interprets the injected section as another request. The response from this tunnelled request can therefore be returned through the outer request.
+
+* **The Cache Poisoning:** Once the attacker confirms that a tunnelled response can be returned, the cachebuster can be removed. The frontend cache can then associate the tunnelled response with the requested cacheable URL, causing subsequent users requesting that URL to receive the poisoned response.
+
+* **The XSS Gadget:** A useful cache-poisoning gadget is an endpoint that reflects query-string input into an HTML response without properly encoding it. For example:
+
+```http
+GET /resources?<script>alert(1)</script> HTTP/1.1
+Host: target.com
+Foo: bar
+```
+
+If the reflected value is inserted into the response without HTML escaping, the response can contain attacker-controlled JavaScript.
+
+* **The Padding Requirement:** The outer response may have a `Content-Length` larger than the tunnelled response. If the tunnelled response is too short, the connection may wait for additional bytes and eventually time out. Padding the reflected payload can make the tunnelled response large enough to satisfy the expected response length.
+
+* **Demo Payload:**
+
+```http
+HEAD / HTTP/2
+Host: target.com
+:path: /?cachebuster=3 HTTP/1.1\r\n Host: target.com\r\n \r\n GET /resources?<script>alert(1)</script>XXXXXXXXXXXX HTTP/1.1\r\n Foo: bar
+```
+
+The padding after the XSS payload is used to increase the size of the reflected response.
+
+* **Core Conceptual Flow:**
+
+```text
+Attacker
+   |
+   |  HTTP/2 request
+   v
+Frontend
+   |
+   |  HTTP/2 -> HTTP/1.1 downgrade
+   |  CRLF injection through :path
+   v
+Tunnelled HTTP/1.1 Request
+   |
+   v
+Backend
+   |
+   |  Reflected XSS response
+   v
+Frontend Cache
+   |
+   |  Cached poisoned response
+   v
+Victim visits cached page
+   |
+   v
+alert(1) executes
+```
+
+* **The Security Impact:** HTTP/2 request tunnelling combined with web cache poisoning can turn a request-parsing weakness into a persistent client-side attack. A successful attack can deliver stored XSS to other users and may potentially lead to session theft, account compromise, or other actions performed in the victim's browser.
