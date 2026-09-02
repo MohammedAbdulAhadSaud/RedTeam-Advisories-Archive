@@ -480,3 +480,61 @@ Attacker obtains cached victim data
 ```
 
 * **The Security Impact:** HTTP request smuggling combined with web cache deception can cause sensitive, user-specific responses to be stored in shared caches. This can expose API keys, session-related information, account data, or other private content to an attacker or other users.
+
+### i. Client-Side Desync
+
+* **The Objective:** Exploit a client-side desynchronization vulnerability to cause a victim's browser to issue a sequence of requests that can be used to capture sensitive information such as the victim's session cookie.
+
+* **The Mechanism:** Some server endpoints ignore the `Content-Length` header and respond before consuming the declared request body. When a browser reuses the same connection, attacker-controlled data left in the connection can be interpreted as the beginning of another HTTP request. This creates a desynchronization between the browser and server and allows an attacker to influence subsequent browser requests.
+
+* **Core Layout Structure:**
+
+```http
+POST / HTTP/1.1
+Host: target.com
+Connection: keep-alive
+Content-Length: 100
+
+GET /capture-me HTTP/1.1
+Host: target.com
+```
+
+* **The Client View:** The browser sends the request according to the declared `Content-Length` and may keep the connection available for additional requests. If the server responds without consuming the expected body, leftover bytes can remain available on the connection.
+
+* **The Server View:** The server ignores the declared `Content-Length` for the vulnerable endpoint and processes the request immediately. The remaining bytes can subsequently be interpreted as another HTTP request, creating the desynchronization condition.
+
+* **The Desync Vector:** A typical confirmation involves sending a malicious request followed by a normal request over the same connection. If the response to the second request corresponds to the attacker-controlled request prefix, this demonstrates that the connection has become desynchronized.
+
+* **The Browser-Based Attack:** Unlike traditional server-side request smuggling, the attack can be triggered directly from a victim's browser using client-side JavaScript. The `fetch()` API can be used to send a request containing the smuggling prefix, while a CORS error can be used to control the subsequent request sequence.
+
+* **The Exploitable Gadget:** A useful application feature is an endpoint that stores attacker-controlled text, such as a comment function. By desynchronizing the connection, the beginning of a subsequent victim request can be captured and stored inside the application.
+
+* **Capturing Sensitive Data:** The attack can be extended so that the victim's browser sends an authenticated request after the desynchronizing request. Because the victim's cookies are automatically included with the browser request, portions of the victim's request can be captured by the attacker-controlled gadget.
+
+* **Core Conceptual Flow:**
+
+```text
+Attacker-Controlled Page
+        |
+        |  Client-side desync request
+        v
+Victim's Browser
+        |
+        |  Persistent connection
+        v
+Vulnerable Server
+        |
+        |  Ignores Content-Length
+        |  Connection becomes desynchronized
+        v
+Victim's Subsequent Request
+        |
+        |  Includes session cookie
+        v
+Application Gadget
+        |
+        v
+Sensitive Request Data Captured
+```
+
+* **The Security Impact:** Client-side desync can allow an attacker-controlled webpage to manipulate a victim's browser connection and cause unintended requests to be issued. Depending on available gadgets, this can expose session cookies or other authenticated request data and potentially lead to account takeover.
