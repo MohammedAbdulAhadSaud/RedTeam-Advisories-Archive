@@ -408,3 +408,75 @@ Host: target.com
 
 * **The Security Impact:** Combining HTTP Request Smuggling with web cache poisoning can turn a transient request desynchronization into a persistent attack. Depending on the cached resource and payload, this can result in reflected or stored XSS, session compromise, credential theft, or arbitrary JavaScript execution in other users' browsers.
 
+### h. Exploiting HTTP Request Smuggling to Perform Web Cache Deception
+
+* **The Objective:** Exploit an HTTP request smuggling vulnerability to cause a victim's sensitive API key to be stored in a frontend cache, then retrieve the cached response and obtain the victim's API key.
+
+* **The Mechanism:** The frontend caches static resources but does not cache the victim's account page directly. By exploiting request desynchronization, the attacker can make the backend process a smuggled request for a sensitive dynamic endpoint while the frontend associates the resulting response with a cacheable request. When the victim later makes a normal request, their personalized response can therefore become stored in the cache under a static resource.
+
+* **Core Layout Structure:**
+
+```http
+POST / HTTP/1.1
+Host: target.com
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 42
+Transfer-Encoding: chunked
+
+0
+
+GET /my-account HTTP/1.1
+X-Ignore: X
+
+```
+
+* **The Front-End View:** The frontend uses `Content-Length` to determine the boundary of the outer request and forwards the request through the persistent connection. Because the frontend and backend disagree about where the request ends, the connection becomes desynchronized.
+
+* **The Back-End View:** The backend processes the request differently and interprets the additional bytes as a separate `GET /my-account` request. This causes the backend to return the account page containing sensitive information such as the user's API key.
+
+* **The Cache Deception:** Unlike ordinary cache poisoning, the attacker is not directly replacing a legitimate cached response with an attacker-controlled response. Instead, the goal is to make a **victim-specific response** containing sensitive data become associated with a cacheable resource.
+
+* **The Victim's Request:** When the victim subsequently browses the application, their authenticated request is processed through the desynchronized connection. The backend generates their personalized account response, including their API key, while the frontend or cache can treat the response as belonging to a cacheable resource.
+
+* **Demo Payload:**
+
+```http
+POST / HTTP/1.1
+Host: target.com
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 42
+Transfer-Encoding: chunked
+
+0
+
+GET /my-account HTTP/1.1
+X-Ignore: X
+
+```
+
+* **Core Conceptual Flow:**
+
+```text
+Attacker
+   |
+   |  Smuggled request
+   v
+Frontend
+   |
+   |  Desynchronized connection
+   v
+Backend
+   |
+   |  Victim's authenticated request
+   v
+Personalized response containing API key
+   |
+   v
+Frontend Cache
+   |
+   |  Later retrieval
+   v
+Attacker obtains cached victim data
+```
+
+* **The Security Impact:** HTTP request smuggling combined with web cache deception can cause sensitive, user-specific responses to be stored in shared caches. This can expose API keys, session-related information, account data, or other private content to an attacker or other users.
