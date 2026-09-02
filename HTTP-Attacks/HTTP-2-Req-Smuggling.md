@@ -214,4 +214,54 @@ Cookie: session=STOLEN-SESSION-COOKIE
 
 * **The Security Impact:** HTTP/2 request splitting through CRLF injection can allow attackers to inject HTTP/1.1 requests during protocol downgrading, poison response queues, capture authenticated responses, steal sessions, and perform unauthorized administrative actions.
 
+### e. HTTP/2 Request Tunnelling
+
+* **The Objective:** Exploit an **HTTP/2 request tunnelling** vulnerability to bypass frontend access controls and make the backend process a privileged HTTP/1.1 request.
+
+* **The Mechanism:** The frontend accepts HTTP/2 requests and downgrades them to HTTP/1.1, but fails to properly sanitize CRLF characters in HTTP/2 header names. By injecting `\r\n` sequences, an attacker can introduce additional HTTP/1.1 headers or construct a tunnelled HTTP/1.1 request that is processed directly by the backend.
+
+* **Core Layout Structure:**
+
+  ```http
+  GET / HTTP/2
+  Host: target.com
+  foo: bar\r\n \r\n GET /admin HTTP/1.1\r\n Host: target.com\r\n
+  ```
+
+* **The Header Injection:** CRLF sequences injected into an HTTP/2 header name can create new HTTP/1.1 header lines after the frontend performs the protocol downgrade. This allows attacker-controlled content to escape the original HTTP/2 header structure.
+
+* **The Authentication Bypass:** If the frontend adds trusted client-authentication headers to requests, the attacker may be able to leak and reproduce these headers inside the tunnelled request:
+
+  ```http
+  GET /admin HTTP/1.1
+  Host: target.com
+  X-SSL-VERIFIED: 1
+  X-SSL-CLIENT-CN: administrator
+  X-FRONTEND-KEY: YOUR-UNIQUE-KEY
+  ```
+
+* **The Request Tunnel:** The injected HTTP/1.1 request is processed by the backend independently of the frontend's normal access-control checks. If the backend trusts frontend-generated authentication headers, the attacker can impersonate a privileged client.
+
+* **Core Conceptual Flow:**
+
+  ```text
+  HTTP/2 Request
+        |
+        v
+    Frontend
+        |
+        | HTTP/2 -> HTTP/1.1 downgrade
+        | CRLF injection
+        v
+  Tunnelled HTTP/1.1 Request
+        |
+        | Trusted authentication headers
+        v
+    Backend
+        |
+        v
+  Privileged Endpoint
+  ```
+
+* **The Security Impact:** HTTP/2 request tunnelling can bypass frontend access controls and allow attackers to directly influence backend requests. When trusted authentication headers are also exposed or spoofable, the vulnerability can lead to authentication bypass, privilege escalation, unauthorized administrative access, and account compromise.
 
