@@ -16,7 +16,7 @@
 | [Path Traversal](./Web/Path_traversal.md) |  |  |
 | [OS Command Injection](./Web/Os_cmd_injection.md) |  |  |
 | [File Upload Vulnerabilities](./Web/File%20Upload%20Vulnerabilities.md) |  |  |
-| [Insecure Deserialization](./Web/Insecure%20Deserialization.md) |  |  |
+| [Insecure Deserialization](./Web/Insecure_Deserialization.md) |  |  |
 | [Prototype Pollution](./Web/Prototype%20Pollution.md) |  |  |
 | [DOM-Based Vulnerabilities](./Web/DOM-Based%20Vulnerabilities.md) |  |  |
 | [Clickjacking](./Web/Clickjacking.md) |  |  |
