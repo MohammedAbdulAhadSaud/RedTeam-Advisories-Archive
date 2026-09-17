@@ -95,3 +95,35 @@ s:12:"access_token";i:0;
 When the application compares the modified integer with another value using PHP's loose comparison behavior, this can result in an **authentication bypass**.
 
 This technique depends on the PHP comparison behavior of the relevant PHP version.
+### Using Application Functionality
+
+Insecure deserialization can be exploited by modifying an object property that is later used by a legitimate application feature to perform a dangerous action.
+
+```text
+Serialized Object
+      |
+      v
+Modify property
+      |
+      v
+Application functionality
+      |
+      v
+Dangerous action
+```
+
+Example:
+
+```text
+avatar_link
+    ↓
+/home/carlos/morale.txt
+    ↓
+Account deletion functionality
+    ↓
+File deletion
+```
+
+The attacker does not necessarily need direct access to a dangerous function. Instead, they can **manipulate serialized object data so that existing application functionality operates on an unintended resource**.
+
+When modifying serialized strings, the corresponding **length indicator must also be updated**.
