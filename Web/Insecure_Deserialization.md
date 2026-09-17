@@ -59,3 +59,39 @@ b:1 → true
 ```
 
 If a session cookie contains a serialized object with an `admin` property, changing its value from `b:0` to `b:1` can result in **privilege escalation** when the application trusts the deserialized object.
+
+### Modifying Serialized Data Types
+
+Insecure deserialization can also be exploited by **changing the data type of a serialized property**.
+
+```text
+Original:
+access_token = "valid-token"
+        |
+        v
+Modified:
+access_token = 0
+```
+
+PHP serialized types:
+
+```text
+s → string
+i → integer
+```
+
+Example:
+
+```text
+s:12:"access_token";s:...:"token";
+```
+
+can be changed to:
+
+```text
+s:12:"access_token";i:0;
+```
+
+When the application compares the modified integer with another value using PHP's loose comparison behavior, this can result in an **authentication bypass**.
+
+This technique depends on the PHP comparison behavior of the relevant PHP version.
