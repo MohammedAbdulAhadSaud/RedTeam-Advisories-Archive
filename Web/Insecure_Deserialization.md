@@ -333,3 +333,91 @@ Cookie: session=MODIFIED_SESSION_COOKIE
 * **Core Concept:** The important issue is that insecure deserialization can allow an attacker to manipulate not only the **values** stored in a serialized object, but also their **data types**. When this is combined with weak type comparisons, a value of an unexpected type can bypass authentication logic.
 
 * **The Security Impact:** Modifying serialized data types can result in authentication bypass, privilege escalation, unauthorized account access, and administrative actions. Applications should avoid trusting client-controlled serialized objects and should use strict type comparisons and server-side validation for security-sensitive authentication data.
+
+## Using Application Functionality to Exploit Insecure Deserialization
+
+* **The Objective:** Exploit insecure deserialization by modifying a serialized object so that an existing application feature uses an attacker-controlled file path. The goal is to abuse the account deletion functionality to delete a file from another user's home directory.
+
+* **The Mechanism:** The application stores session data inside a serialized object. One of the object's attributes, `avatar_link`, contains a file path associated with the user's avatar. A dangerous application method uses this value during account deletion. Because the serialized object can be modified by the client, the attacker can change `avatar_link` to point to an arbitrary file.
+
+* **Core Layout Structure:**
+
+```text
+Session Cookie
+      |
+      | Decode serialized object
+      v
+avatar_link = /path/to/avatar
+      |
+      | Modify serialized value
+      v
+avatar_link = /home/carlos/morale.txt
+      |
+      v
+Application Functionality
+      |
+      | Account deletion
+      v
+Dangerous File Operation
+      |
+      v
+Target File Deleted
+```
+
+* **The Serialized Object:** The session cookie contains a serialized PHP object with attributes representing information associated with the user's account. One of these attributes may resemble:
+
+```text
+s:11:"avatar_link";s:23:"/path/to/avatar"
+```
+
+The `s:23` portion specifies the length of the string stored in the attribute.
+
+* **The Vulnerability:** The application uses a client-controlled serialized attribute as an input to a sensitive file operation. The application does not adequately validate that the supplied file path belongs to the current user's permitted directory.
+
+* **Modifying the File Path:** The attacker changes the `avatar_link` attribute so that it points to the target file:
+
+```text
+s:11:"avatar_link";s:23:"/home/carlos/morale.txt"
+```
+
+The string-length value must match the length of the new path.
+
+* **The Dangerous Application Functionality:** The vulnerability becomes exploitable because the application already contains functionality that performs a file operation using `avatar_link`. In this case, deleting the user's account causes the application to process the avatar file associated with the serialized object.
+
+* **The Attack Flow:**
+
+```text
+Attacker
+   |
+   | Modified session object
+   v
+avatar_link = /home/carlos/morale.txt
+   |
+   v
+POST /my-account/delete
+   |
+   v
+Application processes avatar_link
+   |
+   v
+File operation on attacker-controlled path
+   |
+   v
+/home/carlos/morale.txt deleted
+```
+
+* **Example Request:**
+
+```http
+POST /my-account/delete HTTP/1.1
+Host: target.com
+Cookie: session=MODIFIED_SESSION_COOKIE
+Content-Type: application/x-www-form-urlencoded
+
+```
+
+The important part of the request is the modified serialized session object contained within the session cookie.
+
+* **The Key Concept:** Insecure deserialization does not always require injecting a completely new object or directly invoking a dangerous function. An attacker may instead modify an existing object property and then trigger legitimate application functionality that already performs a dangerous operation using that property.
+
+* **The Security Impact:** If serialized object properties are trusted without validation, attackers may manipulate file paths, URLs, commands, or other sensitive values consumed by application functionality. Depending on the available methods, this can lead to arbitrary file deletion, file access, path traversal, privilege escalation, or potentially remote code execution.
