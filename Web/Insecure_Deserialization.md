@@ -421,3 +421,131 @@ The important part of the request is the modified serialized session object cont
 * **The Key Concept:** Insecure deserialization does not always require injecting a completely new object or directly invoking a dangerous function. An attacker may instead modify an existing object property and then trigger legitimate application functionality that already performs a dangerous operation using that property.
 
 * **The Security Impact:** If serialized object properties are trusted without validation, attackers may manipulate file paths, URLs, commands, or other sensitive values consumed by application functionality. Depending on the available methods, this can lead to arbitrary file deletion, file access, path traversal, privilege escalation, or potentially remote code execution.
+
+## Arbitrary Object Injection in PHP
+
+* **The Objective:** Exploit PHP object deserialization to inject an attacker-controlled serialized object into a session cookie. The goal is to create an object whose magic method performs a dangerous file operation when the object is destroyed.
+
+* **The Mechanism:** PHP allows objects to define magic methods such as `__destruct()`, which is automatically invoked when an object is destroyed. If an application deserializes attacker-controlled data and the corresponding class contains a dangerous magic method, an attacker may be able to create an instance of that class and control the properties used by the method.
+
+* **Core Layout Structure:**
+
+```text
+Attacker-Controlled Serialized Object
+              |
+              v
+        PHP unserialize()
+              |
+              v
+      Object Instantiated
+              |
+              v
+       __destruct() Called
+              |
+              v
+   Dangerous Method Executed
+              |
+              v
+      File Operation
+```
+
+* **The Source Code:** To perform arbitrary object injection, the attacker generally needs to identify a suitable class and understand how its methods use object properties. Source code may reveal classes that contain dangerous magic methods.
+
+* **The Vulnerable Class:** A vulnerable application may contain a class similar to:
+
+```php
+class CustomTemplate
+{
+    private $lock_file_path;
+
+    function __destruct()
+    {
+        unlink($this->lock_file_path);
+    }
+}
+```
+
+The important part is that `__destruct()` automatically calls `unlink()` using the value stored in `lock_file_path`.
+
+* **The Dangerous Magic Method:** The `__destruct()` method is automatically executed when the object is destroyed. If an attacker can control the object's properties through deserialization, the method may perform an operation on an attacker-selected path.
+
+* **The Object Injection:** The attacker creates a serialized instance of the vulnerable class and assigns a target file path to the dangerous property:
+
+```text
+O:14:"CustomTemplate":1:{s:14:"lock_file_path";s:23:"/home/carlos/morale.txt";}
+```
+
+The serialized structure represents:
+
+```text
+Class: CustomTemplate
+Property: lock_file_path
+Value: /home/carlos/morale.txt
+```
+
+* **The Serialization Structure:** PHP serialized objects contain type identifiers and length indicators. For example:
+
+```text
+O:14:"CustomTemplate"
+```
+
+represents an object whose class name is `CustomTemplate`.
+
+The following section:
+
+```text
+s:14:"lock_file_path"
+```
+
+represents the property name, while:
+
+```text
+s:23:"/home/carlos/morale.txt"
+```
+
+represents the string value and its length.
+
+* **The Malicious Object:**
+
+```text
+O:14:"CustomTemplate":1:{s:14:"lock_file_path";s:23:"/home/carlos/morale.txt";}
+```
+
+The attacker then encodes the serialized object in the format expected by the application, such as Base64 and URL encoding, before placing it into the session cookie.
+
+* **The Session Cookie:** The application expects serialized session data inside a client-controlled cookie:
+
+```http
+Cookie: session=ENCODED_SERIALIZED_OBJECT
+```
+
+If the application passes this data to PHP's deserialization functionality without validating the object type or its contents, the attacker can replace the legitimate object with the malicious one.
+
+* **The Deserialization Process:**
+
+```text
+Session Cookie
+      |
+      | Base64/URL decode
+      v
+Serialized CustomTemplate Object
+      |
+      | unserialize()
+      v
+CustomTemplate Instance
+      |
+      v
+__destruct()
+      |
+      | unlink(lock_file_path)
+      v
+Target File
+```
+
+* **The File Operation:** When the malicious object is destroyed, the `__destruct()` method uses the attacker-controlled `lock_file_path` value. In the vulnerable scenario, this causes the application to execute a file deletion operation against the supplied path.
+
+* **Core Concept:** Arbitrary object injection occurs when an attacker can control serialized PHP data and cause the application to instantiate an object of a class that was not intended to be created with attacker-controlled properties.
+
+The attacker does not necessarily inject executable PHP code directly. Instead, they abuse an existing class and its methods to make the application perform a dangerous operation.
+
+* **The Security Impact:** PHP arbitrary object injection can lead to arbitrary file deletion, file access, privilege escalation, command execution, or remote code execution when suitable gadget classes and dangerous magic methods are available in the application's codebase.
