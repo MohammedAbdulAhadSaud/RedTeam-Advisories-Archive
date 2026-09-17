@@ -549,3 +549,556 @@ Target File
 The attacker does not necessarily inject executable PHP code directly. Instead, they abuse an existing class and its methods to make the application perform a dangerous operation.
 
 * **The Security Impact:** PHP arbitrary object injection can lead to arbitrary file deletion, file access, privilege escalation, command execution, or remote code execution when suitable gadget classes and dangerous magic methods are available in the application's codebase.
+
+## Exploiting Java Deserialization with Apache Commons
+
+* **The Objective:** Exploit Java deserialization by injecting a malicious serialized object that uses an available Apache Commons Collections gadget chain to trigger a command on the server.
+
+* **The Mechanism:** The application stores session information in a serialized Java object. During deserialization, Java reconstructs objects contained in the serialized data. If the application's classpath contains vulnerable gadget classes, an attacker can use a pre-built gadget chain to cause unintended code execution when the object is deserialized.
+
+* **Core Layout Structure:**
+
+```text
+Attacker-Controlled Serialized Object
+              |
+              v
+       Java Deserialization
+              |
+              v
+   Apache Commons Gadget Chain
+              |
+              v
+      Method Invocation
+              |
+              v
+     Command Execution
+```
+
+* **The Serialized Session:** The application stores a serialized Java object inside a session cookie:
+
+```http
+Cookie: session=ENCODED_SERIALIZED_OBJECT
+```
+
+The serialized object can be extracted and analyzed to determine that the application is using Java serialization.
+
+* **The Gadget Chain:** A gadget chain is a sequence of existing classes and methods that can be linked together so that deserialization eventually reaches a dangerous operation. In this case, the application loads **Apache Commons Collections**, which provides classes that can be used as part of a known Java deserialization gadget chain.
+
+* **The Vulnerability:** The application deserializes attacker-controlled Java objects without sufficiently restricting the classes that can be instantiated. Because the required gadget classes are available in the application's classpath, an attacker can construct a serialized object that triggers unintended behavior during deserialization.
+
+* **Generating the Malicious Object:** A tool such as `ysoserial` can generate serialized objects containing pre-built gadget chains. A gadget such as `CommonsCollections4` can be selected to generate a payload containing a command.
+
+```bash
+java -jar ysoserial-all.jar CommonsCollections4 'COMMAND' | base64
+```
+
+The resulting output is a Base64-encoded serialized Java object.
+
+* **Java 16+ Compatibility:** Modern Java versions may require additional module-opening arguments when running older gadget-generation tools:
+
+```bash
+java \
+  --add-opens=java.xml/com.sun.org.apache.xalan.internal.xsltc.trax=ALL-UNNAMED \
+  --add-opens=java.xml/com.sun.org.apache.xalan.internal.xsltc.runtime=ALL-UNNAMED \
+  --add-opens=java.base/java.net=ALL-UNNAMED \
+  --add-opens=java.base/java.util=ALL-UNNAMED \
+  -jar ysoserial-all.jar CommonsCollections4 'COMMAND' | base64
+```
+
+* **Example Payload:** In a controlled lab environment, the generated command can perform an intended file operation:
+
+```bash
+java -jar ysoserial-all.jar CommonsCollections4 'rm /home/carlos/morale.txt' | base64
+```
+
+The important point is that the command is embedded inside the serialized gadget chain rather than being sent as ordinary application input.
+
+* **The Payload Encoding:** The generated serialized object is Base64-encoded so that it can be transported through the session cookie. If the application expects URL-encoded cookie values, the generated payload must also be URL-encoded before being placed into the request.
+
+* **The Deserialization Process:**
+
+```text
+Base64/URL-Encoded Cookie
+          |
+          v
+    Decode Payload
+          |
+          v
+ Java Object Deserialization
+          |
+          v
+CommonsCollections4 Gadget Chain
+          |
+          v
+   Dangerous Method Chain
+          |
+          v
+      Command Execution
+```
+
+* **The Session Cookie:** The malicious serialized object replaces the legitimate session object:
+
+```http
+GET / HTTP/1.1
+Host: target.com
+Cookie: session=URL_ENCODED_MALICIOUS_OBJECT
+```
+
+When the application processes the request, it deserializes the supplied object.
+
+* **The Gadget Execution:** During deserialization, the gadget chain causes a sequence of existing Java classes and methods to execute. Eventually, the command embedded in the generated object is reached.
+
+* **Core Concept:** Java deserialization vulnerabilities become especially dangerous when attacker-controlled serialized data can instantiate classes from libraries already present in the application. Gadget chains allow an attacker to combine otherwise ordinary classes and methods into an unintended execution path.
+
+```text
+Untrusted Serialized Data
+          |
+          v
+      Deserialization
+          |
+          v
+   Available Gadget Classes
+          |
+          v
+      Gadget Chain
+          |
+          v
+    Arbitrary Command
+          |
+          v
+ Remote Code Execution
+```
+
+* **The Security Impact:** Unsafe Java deserialization can result in arbitrary code execution, command execution, privilege escalation, authentication bypass, data theft, file manipulation, and complete server compromise. The risk is particularly significant when commonly used libraries expose classes that can be chained into exploitable gadget sequences.
+
+## Exploiting PHP Deserialization with a Pre-Built Gadget Chain
+
+* **The Objective**
+
+  * Exploit insecure PHP deserialization when the application uses a signed, serialized session cookie.
+  * Identify the PHP framework and obtain the secret key used to sign the cookie.
+  * Generate a malicious serialized object using a pre-built gadget chain.
+  * Create a valid signed cookie containing the malicious object.
+  * Trigger remote code execution through the deserialization process.
+
+* **The Mechanism**
+
+  * The application stores session data inside a client-side cookie.
+  * The cookie contains:
+
+    * A Base64-encoded serialized PHP object.
+    * An HMAC-SHA1 signature used to detect tampering.
+  * Normally, modifying the serialized object invalidates the signature.
+  * If the signing secret is exposed, an attacker can:
+
+    1. Generate a malicious serialized object.
+    2. Sign it with the leaked secret.
+    3. Submit the forged cookie.
+    4. Cause the server to deserialize and execute the gadget chain.
+
+### Core Layout Structure
+
+```text
+Client
+  |
+  v
+Signed Session Cookie
+  |
+  +-- token -> Base64 -> Serialized PHP Object
+  |
+  +-- sig_hmac_sha1 -> HMAC-SHA1(token, SECRET_KEY)
+  |
+  v
+Web Application
+  |
+  +-- Verify Signature
+  |
+  +-- Base64 Decode
+  |
+  +-- PHP Deserialize
+  |
+  v
+Symfony Gadget Chain
+  |
+  v
+Remote Code Execution
+```
+
+* **The Session Cookie**
+
+  * The cookie conceptually contains a structure similar to:
+
+```text
+{
+  "token": "<BASE64-SERIALIZED-OBJECT>",
+  "sig_hmac_sha1": "<HMAC-SHA1-SIGNATURE>"
+}
+```
+
+* The `token` contains the serialized PHP object.
+
+* The signature is calculated from the token and a server-side secret.
+
+* **The Vulnerability**
+
+  * PHP deserialization becomes dangerous when attacker-controlled serialized objects can reach `unserialize()`.
+  * A signature can normally prevent object modification, but it does not make deserialization itself safe.
+  * If the secret used to generate the signature is disclosed, the attacker can create a valid signature for a malicious object.
+
+* **Framework Identification**
+
+  * Error messages, debug files, exposed configuration, or other information leaks may reveal the framework and version.
+  * In this technique, identifying the framework is important because pre-built gadget chains are generally framework/version dependent.
+
+```text
+Information Leak
+      |
+      v
+Framework + Version
+      |
+      v
+Select Compatible Gadget Chain
+```
+
+* **Secret Key Disclosure**
+
+  * A debug or information page may expose environment variables or application configuration.
+  * If the HMAC secret is exposed, it can be used to generate valid signatures for attacker-controlled serialized objects.
+
+```text
+SECRET_KEY
+    |
+    v
+HMAC-SHA1(
+    malicious_serialized_object,
+    SECRET_KEY
+)
+    |
+    v
+Valid Signature
+```
+
+* **Pre-Built Gadget Chains**
+
+  * PHPGGC (PHP Generic Gadget Chains) can generate serialized objects for known PHP gadget chains.
+  * A gadget chain abuses existing classes and magic methods within installed frameworks or libraries.
+  * The attacker does not necessarily need source-code access if the framework and compatible gadget chain are known.
+
+* **Generating the Malicious Object**
+
+  * For a Symfony RCE gadget chain, PHPGGC can be used to generate a serialized object containing the desired command:
+
+```bash
+./phpggc Symfony/RCE4 exec 'rm /home/carlos/morale.txt' | base64
+```
+
+* The output is a Base64-encoded serialized PHP object.
+
+* The generated object becomes the `token` value in the forged session cookie.
+
+* **Constructing the Signed Cookie**
+
+  * The malicious object must be signed using the application's leaked secret key.
+  * A PHP script can calculate the HMAC and construct the required cookie structure:
+
+```php
+<?php
+
+$object = "OBJECT-GENERATED-BY-PHPGGC";
+$secretKey = "LEAKED-SECRET-KEY-FROM-PHPINFO.PHP";
+
+$cookie = urlencode(
+    '{"token":"' . $object .
+    '","sig_hmac_sha1":"' .
+    hash_hmac('sha1', $object, $secretKey) .
+    '"}'
+);
+
+echo $cookie;
+```
+
+* **Forged Cookie Structure**
+
+```text
+Malicious Serialized Object
+          |
+          v
+       Base64
+          |
+          v
+       token
+          |
+          +----> HMAC-SHA1(token, SECRET_KEY)
+                         |
+                         v
+                    sig_hmac_sha1
+                         |
+                         v
+              URL-encoded Cookie
+```
+
+* **Deserialization and Gadget Execution**
+
+  * The application receives the forged cookie.
+  * The HMAC is calculated and compared against the supplied signature.
+  * Because the attacker knows the secret key, the signature is valid.
+  * The application decodes the token and deserializes the malicious object.
+  * Symfony's available gadget classes form a chain that reaches the intended dangerous operation.
+  * The supplied command is ultimately executed by the vulnerable application context.
+
+* **Attack Flow**
+
+```text
+1. Obtain a valid session cookie
+          |
+          v
+2. Decode the cookie
+          |
+          v
+3. Identify PHP serialization
+          |
+          v
+4. Identify framework/version
+          |
+          v
+5. Obtain leaked SECRET_KEY
+          |
+          v
+6. Generate compatible gadget chain
+          |
+          v
+7. Base64-encode serialized object
+          |
+          v
+8. Calculate HMAC-SHA1 signature
+          |
+          v
+9. Build forged session cookie
+          |
+          v
+10. Submit cookie
+          |
+          v
+11. PHP deserializes object
+          |
+          v
+12. Gadget chain reaches command execution
+```
+
+* **Core Concept**
+
+  * The critical issue is the combination of:
+
+    * Client-controlled serialized objects.
+    * Unsafe PHP deserialization.
+    * A framework containing usable gadget classes.
+    * Exposure of the signing secret.
+  * A signed cookie does not prevent exploitation if the attacker can obtain the secret required to produce a valid signature.
+
+* **The Security Impact**
+
+  * Successful exploitation can result in:
+
+    * Remote code execution.
+    * Arbitrary operating-system commands.
+    * File deletion or modification.
+    * Access to application secrets.
+    * Further compromise of the application or underlying server.
+  * Pre-built gadget chains make exploitation possible even when application source code is unavailable.
+
+## Exploiting Ruby Deserialization Using a Documented Gadget Chain
+
+* **The Objective**
+
+  * Exploit insecure Ruby deserialization in a Ruby on Rails application.
+  * Identify that the session cookie contains a serialized Ruby object using `Marshal`.
+  * Use a publicly documented gadget chain to construct a malicious serialized object.
+  * Trigger remote code execution through the deserialization process.
+
+* **The Mechanism**
+
+  * Ruby applications can serialize objects using the `Marshal` format.
+  * If an application deserializes attacker-controlled data, an attacker may be able to supply objects that cause unintended behavior during deserialization.
+  * Ruby on Rails and its dependencies may contain classes that can be chained together to reach dangerous functionality.
+  * A documented gadget chain can be adapted to execute attacker-controlled commands.
+
+### Core Layout Structure
+
+```text
+Client
+  |
+  v
+Session Cookie
+  |
+  v
+Base64-Encoded Ruby Marshal Object
+  |
+  v
+Ruby on Rails Application
+  |
+  v
+Marshal Deserialization
+  |
+  v
+Gadget Chain
+  |
+  v
+Command Execution
+```
+
+* **The Session Cookie**
+
+  * The session cookie contains a serialized Ruby object.
+  * Ruby's `Marshal` format is used to represent the object and its associated data.
+  * The serialized object is typically encoded before being placed into the cookie.
+
+```text
+Session Cookie
+      |
+      v
+Encoded Data
+      |
+      v
+Ruby Marshal Object
+      |
+      v
+Application Deserialization
+```
+
+* **The Vulnerability**
+
+  * The application trusts serialized data supplied through the session mechanism.
+  * When this data is passed to Ruby's deserialization functionality, an attacker-controlled object can be reconstructed.
+  * If suitable gadget classes are available, the deserialization process can trigger a chain of method calls leading to command execution.
+
+* **Documented Gadget Chain**
+
+  * Unlike attacks that require discovering a gadget chain from application source code, documented Ruby deserialization exploits can provide an existing chain for known Ruby/Rails environments.
+  * A published gadget chain can be adapted by changing the command and output format.
+  * The exact gadget chain depends on the Ruby and framework versions and the classes available in the application's environment.
+
+```text
+Known Ruby/Rails Environment
+          |
+          v
+Documented Gadget Chain
+          |
+          v
+Adapt Payload
+          |
+          v
+Serialized Marshal Object
+```
+
+* **Generating the Malicious Object**
+
+  * A documented Ruby deserialization gadget chain can be used to generate the malicious object.
+  * The command executed by the payload can be changed to the desired operation.
+
+```ruby
+# Gadget-chain generation logic
+# Change the command to the intended lab command.
+
+command = "rm /home/carlos/morale.txt"
+```
+
+* The final payload should be Base64-encoded so it can be placed into the session cookie:
+
+```ruby
+puts Base64.encode64(payload)
+```
+
+* **Payload Encoding**
+
+  * The generated Ruby `Marshal` object is Base64-encoded before being inserted into the cookie.
+  * The cookie may also require URL encoding because Base64 data can contain characters that have special meaning in URLs.
+
+```text
+Ruby Object
+    |
+    v
+Marshal Serialization
+    |
+    v
+Base64 Encoding
+    |
+    v
+URL Encoding
+    |
+    v
+Session Cookie
+```
+
+* **Deserialization Process**
+
+  * The application receives the session cookie.
+  * The encoded value is decoded.
+  * Ruby reconstructs the serialized object using `Marshal`.
+  * During this process, the gadget chain causes the vulnerable classes to interact in an unintended sequence.
+  * The chain eventually reaches the command-execution primitive.
+
+* **Attack Flow**
+
+```text
+1. Obtain a normal session cookie
+          |
+          v
+2. Identify Ruby Marshal serialization
+          |
+          v
+3. Identify the Ruby/Rails environment
+          |
+          v
+4. Locate a documented compatible gadget chain
+          |
+          v
+5. Adapt the gadget chain
+          |
+          v
+6. Set the desired command
+          |
+          v
+7. Generate the Marshal payload
+          |
+          v
+8. Base64-encode the payload
+          |
+          v
+9. URL-encode the cookie value
+          |
+          v
+10. Submit the malicious session cookie
+          |
+          v
+11. Application deserializes the object
+          |
+          v
+12. Gadget chain reaches command execution
+```
+
+* **Core Concept**
+
+  * Ruby deserialization becomes dangerous when untrusted serialized objects are accepted and reconstructed by the application.
+  * A documented gadget chain can turn this unsafe deserialization primitive into remote code execution without requiring direct access to the application's source code.
+  * The important relationship is:
+
+```text
+Untrusted Marshal Data
+        +
+Unsafe Deserialization
+        +
+Available Gadget Chain
+        =
+Potential Remote Code Execution
+```
+
+* **The Security Impact**
+
+  * Successful exploitation can allow:
+
+    * Remote code execution.
+    * Arbitrary operating-system commands.
+    * File creation, modification, or deletion.
+    * Access to application data and secrets.
+    * Further compromise of the application server.
+  * The availability of a documented gadget chain significantly lowers the amount of application-specific research required to exploit an unsafe Ruby deserialization endpoint.
