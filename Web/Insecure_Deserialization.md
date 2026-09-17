@@ -127,3 +127,30 @@ File deletion
 The attacker does not necessarily need direct access to a dangerous function. Instead, they can **manipulate serialized object data so that existing application functionality operates on an unintended resource**.
 
 When modifying serialized strings, the corresponding **length indicator must also be updated**.
+
+Lab: Arbitrary object injection in PHP
+
+PRACTITIONER
+LAB Solved
+
+This lab uses a serialization-based session mechanism and is vulnerable to arbitrary object injection as a result. To solve the lab, create and inject a malicious serialized object to delete the morale.txt file from Carlos's home directory. You will need to obtain source code access to solve this lab.
+
+You can log in to your own account using the following credentials: wiener:peter
+Hint
+
+You can sometimes read source code by appending a tilde (~) to a filename to retrieve an editor-generated backup file.
+ACCESS THE LAB
+Solution
+
+    Log in to your own account and notice the session cookie contains a serialized PHP object.
+    From the site map, notice that the website references the file /libs/CustomTemplate.php. Right-click on the file and select "Send to Repeater".
+    In Burp Repeater, notice that you can read the source code by appending a tilde (~) to the filename in the request line.
+    In the source code, notice the CustomTemplate class contains the __destruct() magic method. This will invoke the unlink() method on the lock_file_path attribute, which will delete the file on this path.
+
+    In Burp Decoder, use the correct syntax for serialized PHP data to create a CustomTemplate object with the lock_file_path attribute set to /home/carlos/morale.txt. Make sure to use the correct data type labels and length indicators. The final object should look like this:
+    O:14:"CustomTemplate":1:{s:14:"lock_file_path";s:23:"/home/carlos/morale.txt";}
+    Base64 and URL-encode this object and save it to your clipboard.
+    Send a request containing the session cookie to Burp Repeater.
+    In Burp Repeater, replace the session cookie with the modified one in your clipboard.
+    Send the request. The __destruct() magic method is automatically invoked and will delete Carlos's file.
+
