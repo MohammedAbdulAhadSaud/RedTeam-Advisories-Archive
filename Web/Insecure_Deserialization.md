@@ -154,3 +154,39 @@ Solution
     In Burp Repeater, replace the session cookie with the modified one in your clipboard.
     Send the request. The __destruct() magic method is automatically invoked and will delete Carlos's file.
 
+### Java Deserialization Gadget Chains
+
+Java deserialization can lead to **remote code execution (RCE)** when vulnerable classes and libraries contain usable gadget chains.
+
+```text
+Serialized Java Object
+        |
+        v
+Deserialization
+        |
+        v
+Gadget Chain
+        |
+        v
+Dangerous Method / Command Execution
+```
+
+A common example is **Apache Commons Collections**, where pre-built gadget chains can be used to construct a malicious serialized object.
+
+```text
+Apache Commons Collections
+          |
+          v
+   Gadget Chain
+          |
+          v
+Malicious Serialized Object
+          |
+          v
+Java Deserialization
+          |
+          v
+       RCE
+```
+
+Tools such as **ysoserial** can generate serialized objects containing these gadget chains when the vulnerable library is available to the application.
