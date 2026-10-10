@@ -62,3 +62,44 @@ Expression Evaluated
 - **Exploitation:** Once template evaluation is confirmed, vulnerable ERB applications may expose Ruby functionality capable of executing operating system commands, depending on the application's environment and restrictions.
 
 - **Security Impact:** Potential server-side code execution, unauthorized file operations, and compromise of resources accessible to the application process.
+
+
+## Basic ERB Template Injection
+
+- **The Mechanism:** The application uses the `message` parameter to render content through an unsafely constructed ERB template. ERB evaluates expressions enclosed in `<%= ... %>` and renders their results.
+
+- **Detection Payload:**
+
+```erb
+<%= 7*7 %>
+```
+
+If the response renders `49`, this indicates that the input is being evaluated as a template expression.
+
+- **Exploitation:** ERB runs within Ruby, so an exploitable template may allow access to methods such as `system()` to execute operating system commands.
+
+```erb
+<%= system("command") %>
+```
+
+- **Core Attack Flow:**
+
+```text
+message Parameter
+       |
+       v
+Unsafe ERB Template
+       |
+       v
+Expression Evaluation
+       |
+       v
+Ruby Method Execution
+       |
+       v
+Operating System Command
+```
+
+- **Root Cause:** User-controlled input is interpreted as ERB template code instead of being handled as data.
+
+- **Security Impact:** Potential remote code execution and unauthorized file operations under the privileges of the application process.
