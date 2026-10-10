@@ -1,67 +1,64 @@
 
-# Insecure Deserialization
+# Server-Side Template Injection (SSTI)
 
-**Category:** Insecure Deserialization  
+**Category:** Server-Side Template Injection  
 **Severity:** High or Critical
 
 ---
 
 ## Definition
 
-**Insecure Deserialization** occurs when an application deserializes untrusted data without adequately validating or controlling the data being processed.
+**Server-Side Template Injection (SSTI)** occurs when an application unsafely embeds user-controlled input into a server-side template, causing the input to be interpreted as template code rather than ordinary data.
 
-**Serialization** converts an object or data structure into a format that can be stored or transmitted. **Deserialization** converts that data back into an object the application can use.
-
-The vulnerability occurs when an application trusts serialized data that an attacker can modify.
+Template engines process templates to generate dynamic content, such as HTML pages. If an attacker can inject template expressions into an unsafe template, they may be able to manipulate the rendering process and, depending on the engine and its capabilities, execute server-side code.
 
 In simple terms:
 
 ```text
-Object
-   |
-   | Serialization
-   v
-Serialized Data
-   |
-   | Sent to / stored by application
-   v
-Attacker modifies the data
-   |
-   | Deserialization
-   v
-Application reconstructs the object
+User Input
+    |
+    | Embedded into template
+    v
+Server-Side Template
+    |
+    | Template evaluation
+    v
+Injected Expression Executed
+    |
+    v
+Unexpected Application Behavior
 ```
 
 ---
 
-## Modifying Serialized Objects
+## Basic Server-Side Template Injection (ERB)
 
-- **The Objective:** Modify a serialized object stored in a session cookie to change the user's privilege level and gain administrative access.
+- **The Objective:** Identify an ERB template injection vulnerability and exploit it to execute operating system commands.
 
-- **The Mechanism:** The application stores session information in a serialized PHP object containing an `admin` attribute. If the application trusts the client-supplied object without adequately protecting its integrity, an attacker may modify the attribute from `false` to `true`.
+- **The Mechanism:** The application unsafely incorporates user-controlled input from the `message` parameter into an ERB template. ERB uses `<%= ... %>` to evaluate an expression and render its result. If user input is interpreted as template code, an attacker may be able to execute Ruby functionality on the server.
 
 - **Core Layout Structure:**
 
 ```text
-Session Cookie
-      |
-      | URL/Base64 decoding
-      v
-Serialized PHP Object
-      |
-      | Modify admin attribute
-      v
-admin = b:0  (false)
-      |
-      | Change to
-      v
-admin = b:1  (true)
-      |
-      v
-Application Deserializes Object
-      |
-      v
-Potential Privilege Escalation
+User-Controlled Parameter
+          |
+          v
+      message
+          |
+          v
+Unsafe ERB Template
+          |
+          | Inject expression
+          v
+     <%= 7*7 %>
+          |
+          v
+Expression Evaluated
+          |
+          v
+      Output: 49
 ```
 
-- **Security Impact:** Unauthorized administrative access and privilege escalation.
+- **Exploitation:** Once template evaluation is confirmed, vulnerable ERB applications may expose Ruby functionality capable of executing operating system commands, depending on the application's environment and restrictions.
+
+- **Security Impact:** Potential server-side code execution, unauthorized file operations, and compromise of resources accessible to the application process.
