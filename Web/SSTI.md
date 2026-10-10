@@ -238,3 +238,32 @@ Sensitive Data Disclosure
 
 - **Security Impact:** Disclosure of framework secrets and potential follow-on attacks, depending on how the exposed secret is used.
 
+
+## SSTI Custom Exploit Through Method Chaining
+
+- **The Mechanism:** A template exposes a `user` object whose methods can be invoked through injected template expressions. By examining application errors and accessible source code, an attacker can discover methods that perform file operations.
+
+- **Exploitation:** The lab chains the `user.setAvatar()` and `user.gdprDelete()` methods. The avatar method can be manipulated to reference an arbitrary file, while the deletion method removes the user's avatar.
+
+```text
+User Object Exposed to Template
+          |
+          v
+Discover Accessible Methods
+          |
+          v
+user.setAvatar()
+          |
+          v
+Change Avatar File Path
+          |
+          v
+user.gdprDelete()
+          |
+          v
+File Deletion
+```
+
+- **Root Cause:** User-controlled template expressions can invoke application methods with insufficient restrictions, allowing legitimate functionality to be abused.
+
+- **Security Impact:** Arbitrary file access or deletion, depending on the methods exposed and the application's filesystem permissions.
