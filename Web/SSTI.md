@@ -198,6 +198,42 @@ Use Django Template Features
 {{ settings.SECRET_KEY }}
 ```
 
+
+## SSTI Sandbox Escape (Freemarker)
+
+- **The Mechanism:** A sandbox attempts to restrict template operations, but an insecure implementation may still expose Java object methods through objects available in the template context.
+
+- **Identification:** Test whether methods inherited from Java's `Object` class are accessible through a supplied object.
+
+```freemarker
+${product.getClass()}
+```
+
+- **Exploitation:** If the sandbox permits unrestricted method chaining, an attacker may traverse Java object and resource APIs to access files outside the intended template functionality.
+
+- **Core Attack Flow:**
+
+```text
+Template Context Object
+          |
+          v
+Java Object Methods
+          |
+          v
+Class / Resource Access
+          |
+          v
+File Read
+          |
+          v
+Sensitive Data Disclosure
+```
+
+- **Root Cause:** Incomplete sandbox restrictions allow access to dangerous Java methods and APIs.
+
+- **Security Impact:** Sandbox escape and unauthorized access to sensitive server-side files.
+
+
 - **Root Cause:** Sensitive objects are exposed to user-editable templates without adequate access restrictions.
 
 - **Security Impact:** Disclosure of framework secrets and potential follow-on attacks, depending on how the exposed secret is used.
