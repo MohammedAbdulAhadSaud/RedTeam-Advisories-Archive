@@ -146,3 +146,30 @@ Python Code Execution
 
 - **Security Impact:** Potential remote code execution and unauthorized server-side file operations.
 
+
+## SSTI Using Documentation (Freemarker)
+
+- **The Mechanism:** Freemarker uses `${...}` to evaluate expressions. An invalid expression, such as `${foobar}`, can produce an error that reveals the template engine.
+
+- **Identification:**
+
+```text
+${foobar}
+    |
+    v
+Template Error
+    |
+    v
+Identify Freemarker
+```
+
+- **Exploitation:** Freemarker's `new()` built-in can instantiate classes implementing `TemplateModel`. The `freemarker.template.utility.Execute` class can execute operating system commands.
+
+```freemarker
+<#assign ex="freemarker.template.utility.Execute"?new()>
+${ex("command")}
+```
+
+- **Root Cause:** User-controlled template content can invoke dangerous engine features without adequate restrictions.
+
+- **Security Impact:** Potential remote code execution and unauthorized server-side operations.
