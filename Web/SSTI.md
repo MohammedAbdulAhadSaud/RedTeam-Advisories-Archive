@@ -173,3 +173,32 @@ ${ex("command")}
 - **Root Cause:** User-controlled template content can invoke dangerous engine features without adequate restrictions.
 
 - **Security Impact:** Potential remote code execution and unauthorized server-side operations.
+
+
+## SSTI Information Disclosure via User-Supplied Objects (Django)
+
+- **The Mechanism:** Objects passed into a Django template may expose sensitive application data. The `{% debug %}` tag can reveal available template context objects and properties.
+
+- **Identification:**
+
+```text
+Invalid Template Syntax
+        |
+        v
+Error Reveals Django
+        |
+        v
+Use Django Template Features
+```
+
+- **Exploitation:** If the `settings` object is accessible in the template context, its `SECRET_KEY` property may be exposed.
+
+```django
+{% debug %}
+{{ settings.SECRET_KEY }}
+```
+
+- **Root Cause:** Sensitive objects are exposed to user-editable templates without adequate access restrictions.
+
+- **Security Impact:** Disclosure of framework secrets and potential follow-on attacks, depending on how the exposed secret is used.
+
