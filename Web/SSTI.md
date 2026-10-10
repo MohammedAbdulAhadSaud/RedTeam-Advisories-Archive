@@ -103,3 +103,46 @@ Operating System Command
 - **Root Cause:** User-controlled input is interpreted as ERB template code instead of being handled as data.
 
 - **Security Impact:** Potential remote code execution and unauthorized file operations under the privileges of the application process.
+
+
+## SSTI in Code Context (Tornado)
+
+- **The Mechanism:** The application inserts the `blog-post-author-display` parameter into a Tornado template expression. By closing the existing expression with `}}`, an attacker may inject additional template syntax.
+
+- **Detection Payload:**
+
+```python
+user.name}}{{7*7}}
+```
+
+If the rendered username includes `49`, this indicates that the injected expression was evaluated by the template engine.
+
+- **Exploitation:** Tornado supports `{% ... %}` directives for Python statements. In a vulnerable template, these may be abused to import modules and execute operating system commands.
+
+```python
+{% import os %}
+{{os.system('command')}}
+```
+
+- **Core Attack Flow:**
+
+```text
+User-Controlled Parameter
+          |
+          v
+Existing Template Expression
+          |
+          v
+Escape with }}
+          |
+          v
+Inject Tornado Template Syntax
+          |
+          v
+Python Code Execution
+```
+
+- **Root Cause:** User input is inserted into template code without safely separating data from template syntax.
+
+- **Security Impact:** Potential remote code execution and unauthorized server-side file operations.
+
